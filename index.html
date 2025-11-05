@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Routing Board Game</title>
+<style>
+  html,body {margin:0;height:100%}
+  body {background:#111}
+  #hud {position:fixed;left:8px;top:8px;color:#cfcfd4;font:12px/1.35 -apple-system,Segoe UI,Arial,sans-serif;background:rgba(0,0,0,0.28);padding:8px 10px;border-radius:6px;max-width:360px}
+  #hud h2 {margin:0 0 6px 0;font:600 12px/1.2 -apple-system,Segoe UI,Arial,sans-serif;color:#e6e6ea}
+  #hud ul {margin:6px 0 0 16px;padding:0}
+  #hud li {margin:2px 0}
+  .kbd {padding:1px 4px;border-radius:3px;background:#222;color:#ddd;border:1px solid #333;font:11px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .sep {opacity:.6}
+  .small {font-size:11px}
+  canvas {width:100vw;height:100vh;display:block}
+</style>
+<div id="hud">
+  <div>Mode: <span id="mode">Placement</span> <span class="sep">•</span> <span class="kbd">M</span> Toggle <span class="sep">•</span> <span class="kbd">Space</span> Run/Pause <span class="sep">•</span> <span class="kbd">S</span> Step <span class="sep">•</span> <span class="kbd">Shift</span> + Click Reverse</div>
+  <h2>How To Play</h2>
+  <ul>
+    <li><b>Goal</b>: clear all pieces with the lowest <b>score</b> = Turns + 2 × Eaten.</li>
+    <li>Board is 10×10. The highlighted tile at the top is the <b>output</b>. A piece on it is removed at the start of the next turn.</li>
+    <li><b>Placement</b> mode: click tiles to add/remove pieces (one per tile).</li>
+    <li><b>Routing</b> mode: click a tile to set its <b>shift‑out direction</b>; <span class="kbd">Shift</span> + Click cycles backwards. A black arrow on the tile points to the shift‑out direction.</li>
+    <li>Each turn, every piece moves one tile along the tile’s output direction.</li>
+    <li>Collisions: when multiple pieces enter the same tile, the surviving piece is <b class="kbd">red for that turn</b>, and the rest are <b>eaten</b> (+2 score each).</li>
+    <li class="small">Invalid routes (off‑board or empty) flash red and pause auto‑run; fix the route then continue.</li>
+    <li class="small">Shortcuts: <span class="kbd">R</span> reset • <span class="kbd">C</span> clear pieces • <span class="kbd">D</span> clear routes</li>
+  </ul>
+</div>
+<canvas id="c"></canvas>
+<script type="module" src="main.js"></script>
