@@ -2,15 +2,27 @@
 
 This is a browser-based interactive implementation of the routing board puzzle.
 
+## Screenshot
+
+<p align="center">
+  <a href="assets/gameplay.png">
+    <img src="assets/gameplay.png" alt="Gameplay screenshot" width="720" />
+  </a>
+  <br/>
+  <em>Routing board with arrows (shift‑out direction), pieces, HUD and output tile.</em>
+</p>
+
 Controls
 - M: toggle Placement / Routing mode
-- Left click: place/remove piece (Placement) or cycle tile route (Routing)
-- Shift + Left click: reverse-cycle tile route (Routing)
+- Left click: place/remove piece (Placement) or cycle tile direction (Routing)
+- Shift + Left click: reverse-cycle tile direction (Routing)
 - S: step one turn
 - Space: start/stop auto-run
 - R: reset board
 - C: clear all pieces
 - D: clear routing map
+- 1..9: place that many pieces randomly
+- 0: place 10 random pieces
 
 Technical build details
 ```

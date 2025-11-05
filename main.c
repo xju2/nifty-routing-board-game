@@ -48,6 +48,7 @@ extern void gl_clear_color(float r, float g, float b, float a);
 extern void gl_clear(int mask);
 extern void gl_draw_elements(int mode, int count, int type, int offset);
 extern void gl_draw_arrays(int mode, int first, int count);
+extern unsigned int now_ms(void);
 
 // Minimal libc replacements (avoid JS shims and imports)
 typedef unsigned int size_t;
@@ -90,6 +91,14 @@ static int pieces_remaining = 0;
 static unsigned char occ[H][W];
 static unsigned char dir_map[H][W];
 static unsigned char collided[H][W]; // 1 if multiple pieces arrived here in last step
+
+// RNG (xorshift32)
+static unsigned int rng_state = 1u;
+static unsigned int rng_next(void){
+    unsigned int x = rng_state; x ^= x << 13; x ^= x >> 17; x ^= x << 5; rng_state = x ? x : 1u; return rng_state;
+}
+static void rng_seed(unsigned int s){ rng_state = s ? s : 1u; }
+static int rand_range(int n){ return (int)(rng_next() % (unsigned int)n); }
 
 // Board layout in pixels (computed per frame)
 static float tile_px = 40.0f;
@@ -283,6 +292,25 @@ static void draw_piece(int gx, int gy) {
         draw_rect(px, py, s, s, 0.22f, 0.45f, 0.98f, 1.0f);
 }
 
+static void place_random_pieces(int count){
+    if (count < 0) count = 0; if (count > W*H) count = W*H;
+    // clear occupancy
+    for (int y=0;y<H;y++) for (int x=0;x<W;x++) { occ[y][x]=0; collided[y][x]=0; }
+    // Fisher-Yates over a list of all cells
+    int total = W*H;
+    int cells[W*H];
+    for (int i=0;i<total;i++) cells[i]=i;
+    for (int i=total-1;i>0;i--) {
+        int j = rand_range(i+1);
+        int t=cells[i]; cells[i]=cells[j]; cells[j]=t;
+    }
+    for (int i=0;i<count;i++) {
+        int idx = cells[i]; int x = idx % W; int y = idx / W;
+        occ[y][x] = 1;
+    }
+    pieces_remaining = count;
+}
+
 // -----------------------
 // HUD: simple 7-seg digits and letters (T,E,S,P)
 static void draw_seg_h(float x,float y,float w,float t,float r,float g,float b,float a){ draw_rect(x,y,w,t,r,g,b,a);} // horizontal
@@ -445,6 +473,10 @@ void on_key(int code, int down) {
         for (int y=0;y<H;y++) for (int x=0;x<W;x++) occ[y][x]=0;
     } else if (code=='D') {
         for (int y=0;y<H;y++) for (int x=0;x<W;x++) dir_map[y][x]=DIR_NONE;
+    } else if (code>='0' && code<='9') {
+        int n = (code=='0') ? 10 : (code - '0');
+        place_random_pieces(n);
+        turns=0; eaten=0; running=0; invalid_flash=0.0f;
     }
 }
 
@@ -495,6 +527,7 @@ void init(void) {
     // Clear state
     for (int y=0;y<H;y++) for (int x=0;x<W;x++) { occ[y][x]=0; dir_map[y][x]=DIR_NONE; collided[y][x]=0; }
     pieces_remaining = 0;
+    rng_seed(now_ms() ^ 0xA53u);
 }
 
 __attribute__((export_name("frame")))

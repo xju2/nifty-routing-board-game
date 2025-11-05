@@ -180,6 +180,8 @@ function keyCodeFor(e) {
   if (c === 'Space') return 32;
   // no Tab handling; let browser use it
   if (c.startsWith('Key') && c.length === 4) return c.charCodeAt(3); // KeyR -> 'R'
+  if (c.startsWith('Digit') && c.length === 6) return c.charCodeAt(5); // Digit0..9 -> '0'..'9'
+  if (c.startsWith('Numpad') && c.length === 7) return c.charCodeAt(6); // Numpad0..9
   if (c === 'ArrowUp') return 38;
   if (c === 'ArrowDown') return 40;
   if (c === 'ArrowLeft') return 37;
