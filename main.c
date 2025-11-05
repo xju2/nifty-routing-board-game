@@ -311,6 +311,31 @@ static void place_random_pieces(int count){
     pieces_remaining = count;
 }
 
+// ----------------------------------
+// History for step backward
+#define MAX_HISTORY 2048
+typedef struct { unsigned char occ[H][W]; unsigned char collided[H][W]; int eaten; } Snap;
+static Snap history[MAX_HISTORY];
+static int hist_len = 0; // number of saved pre-step states
+
+static void push_history(void){
+    if (hist_len >= MAX_HISTORY) return;
+    for (int y=0;y<H;y++) for (int x=0;x<W;x++){ history[hist_len].occ[y][x]=occ[y][x]; history[hist_len].collided[y][x]=collided[y][x]; }
+    history[hist_len].eaten = eaten;
+    hist_len++;
+}
+static int pop_history(void){
+    if (hist_len <= 0) return 0;
+    hist_len--;
+    for (int y=0;y<H;y++) for (int x=0;x<W;x++){ occ[y][x]=history[hist_len].occ[y][x]; collided[y][x]=history[hist_len].collided[y][x]; }
+    eaten = history[hist_len].eaten;
+    // recompute pieces_remaining
+    int pr=0; for (int y=0;y<H;y++) for (int x=0;x<W;x++) if (occ[y][x]) pr++;
+    pieces_remaining = pr;
+    if (turns>0) turns--; running = 0; // stop auto-run on manual back
+    return 1;
+}
+
 // -----------------------
 // HUD: simple 7-seg digits and letters (T,E,S,P)
 static void draw_seg_h(float x,float y,float w,float t,float r,float g,float b,float a){ draw_rect(x,y,w,t,r,g,b,a);} // horizontal
@@ -384,6 +409,8 @@ static int dx_for(int dir){ return dir==DIR_RIGHT ? 1 : dir==DIR_LEFT ? -1 : 0; 
 static int dy_for(int dir){ return dir==DIR_DOWN  ? 1 : dir==DIR_UP   ? -1 : 0; }
 
 static int step_once(void) {
+    // Save current state for undo
+    push_history();
     // Remove any piece that was on the output tile at the start of the turn
     if (occ[OUT_Y][OUT_X]) occ[OUT_Y][OUT_X] = 0;
 
@@ -446,12 +473,14 @@ void on_pointer(int x, int y, int type, int buttons, int mods) {
         occ[ty][tx] = occ[ty][tx] ? 0 : 1;
         // recompute pieces_remaining lazily
         int pr=0; for(int j=0;j<H;j++) for(int i=0;i<W;i++) if (occ[j][i]) pr++; pieces_remaining=pr;
+        hist_len = 0; // editing invalidates history
     } else {
         // Routing: cycle direction
         int order[] = {DIR_NONE, DIR_UP, DIR_RIGHT, DIR_DOWN, DIR_LEFT};
         int n=5, idx=0; for(int i=0;i<n;i++){ if(order[i]==dir_map[ty][tx]){ idx=i; break; }}
         idx = reverse ? (idx-1+n)%n : (idx+1)%n;
         dir_map[ty][tx] = order[idx];
+        hist_len = 0; // editing invalidates history
     }
     last_tx = tx; last_ty = ty;
 }
@@ -465,18 +494,22 @@ void on_key(int code, int down) {
         running = !running;
     } else if (code=='S') {
         (void)step_once();
+    } else if (code=='Z') {
+        (void)pop_history();
     } else if (code=='R') {
         // reset state but keep routing
         for (int y=0;y<H;y++) for (int x=0;x<W;x++) occ[y][x]=0;
-        turns=0; eaten=0; running=0; invalid_flash=0.0f;
+        turns=0; eaten=0; running=0; invalid_flash=0.0f; hist_len=0;
     } else if (code=='C') {
         for (int y=0;y<H;y++) for (int x=0;x<W;x++) occ[y][x]=0;
+        hist_len=0;
     } else if (code=='D') {
         for (int y=0;y<H;y++) for (int x=0;x<W;x++) dir_map[y][x]=DIR_NONE;
+        hist_len=0;
     } else if (code>='0' && code<='9') {
         int n = (code=='0') ? 10 : (code - '0');
         place_random_pieces(n);
-        turns=0; eaten=0; running=0; invalid_flash=0.0f;
+        turns=0; eaten=0; running=0; invalid_flash=0.0f; hist_len=0;
     }
 }
 
