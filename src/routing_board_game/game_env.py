@@ -36,8 +36,9 @@ class RoutingGameEnv(gym.Env):
             "edit_mask": spaces.Box(low=0, high=1, shape=(H, W), dtype=np.uint8)
         })
 
-        # Agent sets direction for the whole board; Env enforces masks
-        self.action_space = spaces.MultiDiscrete(np.full((H, W), 5))
+        # FIX: Flatten the action space to 1D to satisfy Stable Baselines3
+        # Instead of (10, 10), we use (100,)
+        self.action_space = spaces.MultiDiscrete(np.full(H * W, 5))
 
         self.reset()
 
@@ -71,9 +72,12 @@ class RoutingGameEnv(gym.Env):
         }
 
     def _apply_router_action(self, action):
+        # FIX: Reshape the 1D action back to 2D (H, W) to map to the board
+        action_2d = action.reshape(self.H, self.W)
+
         # Update directions only where mask is 1
         update_indices = np.where(self.edit_mask == 1)
-        self.directions[update_indices] = action[update_indices]
+        self.directions[update_indices] = action_2d[update_indices]
 
     def _simulation_step(self):
         """Advances board one step. Handles movement and collisions."""
@@ -85,8 +89,6 @@ class RoutingGameEnv(gym.Env):
             for x in range(W):
                 if self.board[y, x] == 1:
                     d = self.directions[y, x]
-                    # Note: main.c says pieces move 1 tile in arrow direction.
-                    # If DIR_NONE or invalid move, piece stays put (implied penalty).
                     if d == DIR_NONE:
                         moves.append((y, x, y, x))
                         continue
@@ -97,11 +99,6 @@ class RoutingGameEnv(gym.Env):
                     if 0 <= nx < W and 0 <= ny < H:
                         moves.append((y, x, ny, nx))
                     else:
-                        # Moves off board?
-                        # Rules say "Route to top output".
-                        # main.c: "Any piece on the output tile is removed at start of next turn"
-                        # But strictly, if it moves OFF board not at output, it's invalid.
-                        # We will assume pieces trying to leave board (not at output) stay put.
                         moves.append((y, x, y, x))
 
 
@@ -116,25 +113,13 @@ class RoutingGameEnv(gym.Env):
             for tx in range(W):
                 c = counts[ty, tx]
                 if c > 0:
-                    # One survives, c-1 eaten
                     if c > 1:
                         current_eaten += (c - 1)
-
-                    # Handle Output Tile Logic
-                    # "Any piece on the output tile is removed at the start of the next turn"
-                    # In this simulation step, they arrive at the tile.
-                    # They will be removed at the very beginning of the *next* call if they are at OUT.
-                    # However, to simplify scoring "Left on board", we treat arrival at Output as 'Safe'.
-                    # We will simply leave it on board for now.
                     new_board[ty, tx] = 1
 
-        # 3. Clean Output Tile (Logic from main.c: removed start of next turn)
-        # Effectively, pieces at (OUT_Y, OUT_X) are removed now for the sake of the *next* state.
-        # But wait, logic says "removed at start of next turn".
-        # Let's count them as "safe" and remove them from board so they don't get eaten or count as leftover.
+        # 3. Clean Output Tile
         if new_board[OUT_Y, OUT_X] == 1:
             new_board[OUT_Y, OUT_X] = 0
-            # These are routed successfully (not eaten).
 
         self.eaten_pieces += current_eaten
         self.board = new_board
@@ -143,6 +128,7 @@ class RoutingGameEnv(gym.Env):
         """Randomly places `count` pieces on empty squares."""
         pieces_placed = 0
         attempts = 0
+        last_placed = None
         while pieces_placed < count and attempts < 100:
             rx, ry = np.random.randint(0, W), np.random.randint(0, H)
             if self.board[ry, rx] == 0:
@@ -150,7 +136,7 @@ class RoutingGameEnv(gym.Env):
                 pieces_placed += 1
                 last_placed = (ry, rx)
             attempts += 1
-        return last_placed if pieces_placed > 0 else None
+        return last_placed
 
     def step(self, action):
         # 1. Apply Agent (Router) Action based on current mask
@@ -166,55 +152,36 @@ class RoutingGameEnv(gym.Env):
         # ------------------------------------------------
 
         if self.phase == 0:
-            # Step 1 Complete: Initial Routing Set.
-            # Step 2: Placer places 8 pieces.
+            # Step 1 Complete -> Step 2 (Place 8)
             self._placer_action_random(8)
-
-            # Prepare for Step 3: Router changes arrows on occupied squares.
-            self.edit_mask = self.board.copy() # Only occupied are 1
+            self.edit_mask = self.board.copy()
             self.phase = 2
-
-            # No reward yet, game continues
             return self._get_obs(), reward, terminated, truncated, info
 
         elif self.phase == 2:
-            # Step 3 Complete: Router updated occupied squares.
-            # Step 4: Advance one step.
+            # Step 3/6 Complete -> Step 4 (Simulate)
             self._simulation_step()
 
-            # Step 5: Placer places one more piece.
+            # Step 5 (Place 1)
             if self.placer_pieces_left > 0:
                 last_pos = self._placer_action_random(1)
                 self.placer_pieces_left -= 1
 
-                # Step 6 Setup: Router can change arrow on new piece + adjacent.
+                # Step 6 Setup (Edit new + adjacent)
                 self.edit_mask = np.zeros((H, W), dtype=np.uint8)
                 if last_pos:
                     ly, lx = last_pos
-                    # Add Center, Up, Down, Left, Right
                     shifts = [(0,0), (0,1), (0,-1), (1,0), (-1,0)]
                     for dy, dx in shifts:
                         ny, nx = ly + dy, lx + dx
                         if 0 <= ny < H and 0 <= nx < W:
                             self.edit_mask[ny, nx] = 1
 
-                # Loop back to Phase 2-like state (Single Step Loop)
-                # But actually, prompt says "go back to step 4".
-                # The loop is: (Router Fix) -> (Sim) -> (Place) -> (Router Fix) -> ...
-                # My Phase 2 was "Router Fix". So we stay in Phase 2 logic essentially,
-                # but the mask changes.
+                # Remain in Phase 2 logic (Router edit -> Sim loop)
                 self.phase = 2
 
             else:
-                # Placer has no pieces left.
-                # Transition to Step 7: Final Simulation Run.
-                # We need to run simulation steps until empty or 25 steps.
-                # Since Gym step() should return one interaction, we can either:
-                # A) Run the whole simulation in one frame (fast, easier learning)
-                # B) Let the agent watch (but not act) for 25 steps.
-                # Prompt says: "7. Run more steps... 8. Score". Agent doesn't act in step 7.
-                # So we run it all now.
-
+                # Step 7: Final Simulation Run
                 step_count = 0
                 while np.sum(self.board) > 0 and step_count < 25:
                     self._simulation_step()
@@ -223,18 +190,15 @@ class RoutingGameEnv(gym.Env):
                 self.steps_in_phase_7 = step_count
 
                 # Calculate Score
-                # Score = steps in (7) + 10 * eaten + 10 * leftover
                 pieces_left = np.sum(self.board)
                 score = self.steps_in_phase_7 + (10 * self.eaten_pieces) + (10 * pieces_left)
 
-                # Goal: Minimize score. Reward = -Score.
                 reward = -float(score)
                 terminated = True
 
         return self._get_obs(), reward, terminated, truncated, info
 
     def render(self):
-        # Simple ANSI render
         print("-" * 20)
         print(f"Phase: {self.phase}, Eaten: {self.eaten_pieces}")
         for y in range(H):
@@ -242,9 +206,8 @@ class RoutingGameEnv(gym.Env):
             for x in range(W):
                 char = "."
                 if self.board[y, x] == 1:
-                    char = "P" # Piece
+                    char = "P"
 
-                # Overlay Direction
                 d = self.directions[y, x]
                 d_char = " "
                 if d == DIR_UP: d_char = "^"
