@@ -5,7 +5,12 @@ description = "Routing board game simulation and analysis tool"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "click>=8.3.1",
     "gymnasium>=1.2.2",
     "shimmy>=2.0.0",
     "stable-baselines3>=2.7.0",
+    "tensorboard>=2.20.0",
 ]
+
+[project.scripts]
+nifty = "routing_board_game.cli.main:main"

@@ -38,7 +38,7 @@ class RoutingGameEnv(gym.Env):
 
         # FIX: Flatten the action space to 1D to satisfy Stable Baselines3
         # Instead of (10, 10), we use (100,)
-        self.action_space = spaces.MultiDiscrete(np.full(H * W, 5))
+        self.action_space = spaces.MultiDiscrete([5] * (H * W))
 
         self.reset()
 
