@@ -1,0 +1,11 @@
+[project]
+name = "routing_board_game"
+version = "0.1.0"
+description = "Routing board game simulation and analysis tool"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "gymnasium>=1.2.2",
+    "shimmy>=2.0.0",
+    "stable-baselines3>=2.7.0",
+]
