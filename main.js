@@ -169,6 +169,8 @@ canvas.addEventListener('mousedown', e => {
   e.preventDefault();
   if (e.button === 2) { /* right button */ e.preventDefault(); }
   sendPointer(e, 1);
+
+  updateAI();  // Ask AI to route the pieces.
 });
 canvas.addEventListener('mousemove', e => sendPointer(e, 0));
 window.addEventListener('mouseup', e => sendPointer(e, 2));
@@ -208,3 +210,44 @@ function tick(tNow) {
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
+
+// --- AI INTEGRATION LOGIC ---
+async function updateAI() {
+  if (!wasm) return;
+
+  // 1. Get Memory Pointers
+  const occPtr = wasm.exports.get_board_ptr();
+  const dirPtr = wasm.exports.get_dir_ptr();
+
+  // 2. Read current state from WASM memory
+  // We read 100 bytes (10x10 board)
+  const boardData = Array.from(u8().subarray(occPtr, occPtr + 100));
+  const dirData = Array.from(u8().subarray(dirPtr, dirPtr + 100));
+
+  // 3. Send to Python Server
+  try {
+    const response = await fetch('/get_action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        board: boardData,
+        directions: dirData
+      })
+    });
+
+    const result = await response.json();
+
+    // 4. Write new directions back to WASM memory
+    const newDirs = result.new_directions;
+    const heap = u8();
+    for (let i = 0; i < 100; i++) {
+        // Only update if there is a piece there (optional, but cleaner)
+        if (boardData[i] === 1) {
+            heap[dirPtr + i] = newDirs[i];
+        }
+    }
+
+  } catch (err) {
+    console.error("AI Update Failed:", err);
+  }
+}

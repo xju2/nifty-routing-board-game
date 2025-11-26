@@ -366,10 +366,10 @@ static float draw_number(int n, float x, float y, float scale, float r, float g,
     return x; // return pen x
 }
 
-static void draw_letter_T(float x,float y,float s){ float w=10*s,t=2*s; draw_rect(x,y,w,t,1,1,1,1); draw_rect(x+w/2-t/2,y,t,16*s,1,1,1,1);} 
-static void draw_letter_E(float x,float y,float s){ float w=10*s,t=2*s; draw_rect(x,y,t,16*s,1,1,1,1); draw_rect(x,y,w,t,1,1,1,1); draw_rect(x,y+8*s-t/2,w*0.8f,t,1,1,1,1); draw_rect(x,y+16*s-t,w,t,1,1,1,1);} 
-static void draw_letter_S(float x,float y,float s){ float w=10*s,t=2*s; draw_rect(x,y,w,t,1,1,1,1); draw_rect(x,y+8*s-t/2,w,t,1,1,1,1); draw_rect(x,y+16*s-t,w,t,1,1,1,1); draw_rect(x,y+t, t, 6*s,1,1,1,1); draw_rect(x+w-t,y+8*s, t, 6*s,1,1,1,1);} 
-static void draw_letter_P(float x,float y,float s){ float w=10*s,t=2*s; draw_rect(x,y,t,16*s,1,1,1,1); draw_rect(x,y,w,t,1,1,1,1); draw_rect(x+w-t,y+t, t, 6*s,1,1,1,1); draw_rect(x,y+8*s-t/2,w,t,1,1,1,1);} 
+static void draw_letter_T(float x,float y,float s){ float w=10*s,t=2*s; draw_rect(x,y,w,t,1,1,1,1); draw_rect(x+w/2-t/2,y,t,16*s,1,1,1,1);}
+static void draw_letter_E(float x,float y,float s){ float w=10*s,t=2*s; draw_rect(x,y,t,16*s,1,1,1,1); draw_rect(x,y,w,t,1,1,1,1); draw_rect(x,y+8*s-t/2,w*0.8f,t,1,1,1,1); draw_rect(x,y+16*s-t,w,t,1,1,1,1);}
+static void draw_letter_S(float x,float y,float s){ float w=10*s,t=2*s; draw_rect(x,y,w,t,1,1,1,1); draw_rect(x,y+8*s-t/2,w,t,1,1,1,1); draw_rect(x,y+16*s-t,w,t,1,1,1,1); draw_rect(x,y+t, t, 6*s,1,1,1,1); draw_rect(x+w-t,y+8*s, t, 6*s,1,1,1,1);}
+static void draw_letter_P(float x,float y,float s){ float w=10*s,t=2*s; draw_rect(x,y,t,16*s,1,1,1,1); draw_rect(x,y,w,t,1,1,1,1); draw_rect(x+w-t,y+t, t, 6*s,1,1,1,1); draw_rect(x,y+8*s-t/2,w,t,1,1,1,1);}
 
 static void draw_hud(void){
     // Scale HUD relative to tile size; clamp and reduce to ~80%
@@ -592,3 +592,10 @@ void frame(float dt) {
         draw_rect(board_x, board_y, board_w, board_h, 0.9f, 0.2f, 0.2f, a);
     }
 }
+
+// --- AI INTEGRATION EXPORTS ---
+__attribute__((export_name("get_board_ptr")))
+unsigned char* get_board_ptr() { return &occ[0][0]; }
+
+__attribute__((export_name("get_dir_ptr")))
+unsigned char* get_dir_ptr() { return &dir_map[0][0]; }
