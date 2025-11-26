@@ -7,9 +7,7 @@ app = Flask(__name__, static_folder=".")
 
 # Constants
 W, H = 10, 10
-MODEL_PATH = (
-    "/media/DataOcean/code/nifty-routing-board-game/ppo_router_agent_single_file.zip"
-)
+MODEL_PATH = "/media/DataOcean/code/nifty-routing-board-game/ppo_router_agent.zip"
 
 print(f"Loading AI Model from {MODEL_PATH}...")
 try:
