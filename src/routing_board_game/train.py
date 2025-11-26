@@ -4,7 +4,7 @@ from stable_baselines3.common.callbacks import EvalCallback
 from routing_board_game.game_env import RoutingGameEnv
 
 
-def train(placer_extra_pieces):
+def train(placer_extra_pieces, total_timesteps=100_000):
     # Create the environment
     # We wrap it in a Vectorized Environment for faster training
     env = make_vec_env(
@@ -35,7 +35,7 @@ def train(placer_extra_pieces):
 
     print("Starting training...")
     # Train the agent
-    model.learn(total_timesteps=100_000, callback=eval_callback)
+    model.learn(total_timesteps=total_timesteps, callback=eval_callback)
     print("Training finished.")
 
     model.save("ppo_router_agent")

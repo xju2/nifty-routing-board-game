@@ -64,3 +64,11 @@ Examples
   - `make -C routing-board CLANG=clang-mp-19`
 - Homebrew LLVM:
   - `make -C routing-board CLANG=$(brew --prefix llvm)/bin/clang`
+
+
+## Training an AI Agent to play the Game
+
+Training the AI agent.
+```bash
+uv run nifty train --placer_extra_pieces 5 --total_timesteps 1000000
+```

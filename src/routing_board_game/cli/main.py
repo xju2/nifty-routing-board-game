@@ -15,9 +15,14 @@ def main():
     default=5,
     help="Number of extra pieces the placer can add.",
 )
-def train(placer_extra_pieces):
+@click.option(
+    "--total_timesteps",
+    default=100_000,
+    help="Total timesteps for training the agent.",
+)
+def train(placer_extra_pieces, total_timesteps):
     """Train the routing board game agent."""
-    _train(placer_extra_pieces)
+    _train(placer_extra_pieces, total_timesteps)
 
 
 # add play command
