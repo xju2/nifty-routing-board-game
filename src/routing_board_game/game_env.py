@@ -2,11 +2,11 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 
-# Constants from main.c
+# Constants
 W, H = 10, 10
 OUT_X, OUT_Y = 5, 0
 
-# Directions
+# Directions (1-4 Only, 0 is unused/invalid for routing)
 DIR_NONE = 0
 DIR_UP = 1
 DIR_RIGHT = 2
@@ -21,35 +21,28 @@ DY = {DIR_RIGHT: 0, DIR_LEFT: 0, DIR_UP: -1, DIR_DOWN: 1, DIR_NONE: 0}
 class RoutingGameEnv(gym.Env):
     metadata = {"render_modes": ["human", "ansi"]}
 
-    def __init__(self, placer_extra_pieces=5, placer_strategy=None):
+    def __init__(self, placer_extra_pieces=5):
         super(RoutingGameEnv, self).__init__()
 
         self.W = W
         self.H = H
         self.placer_extra_pieces_total = placer_extra_pieces
 
-        # Pluggable strategy: Default to random if none provided
-        self.placer_strategy = (
-            placer_strategy if placer_strategy else self._default_random_placer
-        )
-
         # Observation Space
-        # 0=Empty, 1=Piece
-        # Directions: 1=Up, 2=Right, 3=Down, 4=Left (0 is unused/invalid on board now)
-        # Mask: 1=Editable by Router, 0=Locked
+        # board: 0=Empty, 1=Piece
+        # directions: 1=Up, 2=Right, 3=Down, 4=Left
+        # edit_mask: Now always 1s (Full control)
         self.observation_space = spaces.Dict(
             {
                 "board": spaces.Box(low=0, high=1, shape=(H, W), dtype=np.uint8),
                 "directions": spaces.Box(low=1, high=4, shape=(H, W), dtype=np.uint8),
                 "edit_mask": spaces.Box(low=0, high=1, shape=(H, W), dtype=np.uint8),
-                "steps_remaining": spaces.Box(
-                    low=0, high=50, shape=(1,), dtype=np.float32
-                ),
             }
         )
 
         # Action Space: 4 options per tile (UP, RIGHT, DOWN, LEFT)
         # We map 0->1, 1->2, 2->3, 3->4 to ensure NO "None" directions.
+        # This enforces "every box should have a routing direction".
         self.action_space = spaces.MultiDiscrete([4] * (H * W))
 
         self.reset()
@@ -59,51 +52,45 @@ class RoutingGameEnv(gym.Env):
 
         self.board = np.zeros((H, W), dtype=np.uint8)
 
-        # REQUIREMENT: Board initiated with routes.
-        # We initialize random directions (1-4) everywhere.
+        # 1. Initialize board with RANDOM valid routes (1-4)
         self.directions = np.random.randint(1, 5, size=(H, W), dtype=np.uint8)
 
         self.eaten_pieces = 0
         self.steps_in_phase_7 = 0
         self.placer_pieces_left = self.placer_extra_pieces_total
 
-        # --- FAST FORWARD ---
-        # Rule: 1. Router sets initial... (We just did this randomly)
-        # Rule: 2. Placer places 8 pieces.
-        self.placer_strategy(self.board, 8)
+        # 2. Placer places the initial 8 pieces randomly
+        self._placer_action_random(8)
 
-        # Rule: 3. Router modifies occupied squares.
-        # We start the agent interaction HERE.
-        self.edit_mask = self.board.copy()  # Only occupied are editable
+        # 3. Router Turn: Agent can now edit the WHOLE board
+        self.edit_mask = np.ones((H, W), dtype=np.uint8)
         self.phase = 2
 
         return self._get_obs(), {}
 
     def _get_obs(self):
-        # Approx steps left calculation for agent awareness
-        rem = 25.0 if self.placer_pieces_left <= 0 else (25.0 + self.placer_pieces_left)
         return {
             "board": self.board.copy(),
             "directions": self.directions.copy(),
             "edit_mask": self.edit_mask.copy(),
-            "steps_remaining": np.array([rem], dtype=np.float32),
         }
 
     def _apply_router_action(self, action):
-        # Reshape flat action to 2D
+        # Reshape flat action (100,) to 2D (10, 10)
         action_2d = action.reshape(self.H, self.W)
 
-        # MAP 0-3 to 1-4 (UP, RIGHT, DOWN, LEFT)
-        # This ensures every tile always has a valid direction.
+        # Map Agent Output (0-3) to Game Directions (1-4)
+        # 0->UP(1), 1->RIGHT(2), 2->DOWN(3), 3->LEFT(4)
         mapped_action = action_2d + 1
 
-        # Update only allowed tiles
+        # Update all tiles (since mask is all 1s)
+        # We still use the mask logic just in case you want to restrict it later
         update_indices = np.where(self.edit_mask == 1)
         self.directions[update_indices] = mapped_action[update_indices]
 
     def _simulation_step(self):
         """Advances board one step."""
-        # 1. Clean Output Tile (Start of Turn Logic)
+        # 1. Clean Output Tile (Start of Turn Rule)
         if self.board[OUT_Y, OUT_X] == 1:
             self.board[OUT_Y, OUT_X] = 0
 
@@ -114,8 +101,7 @@ class RoutingGameEnv(gym.Env):
             for x in range(W):
                 if self.board[y, x] == 1:
                     d = self.directions[y, x]
-                    # d is guaranteed 1-4 now, so no DIR_NONE check needed strictly,
-                    # but good to be safe.
+                    # Since we force d in [1..4], DIR_NONE(0) is impossible
                     if d == DIR_NONE:
                         moves.append((y, x, y, x))
                         continue
@@ -126,7 +112,7 @@ class RoutingGameEnv(gym.Env):
                     if 0 <= nx < W and 0 <= ny < H:
                         moves.append((y, x, ny, nx))
                     else:
-                        # Attempt to move off-board (not at output) -> Stay put
+                        # Moves off board (not at output) -> Stay put
                         moves.append((y, x, y, x))
 
         # 2. Resolve Collisions
@@ -143,21 +129,18 @@ class RoutingGameEnv(gym.Env):
                         current_eaten += c - 1
                     new_board[ty, tx] = 1
 
-        # Note: Output tile logic. Pieces arriving at (OUT_X, OUT_Y) stay
-        # visible for 1 frame (so Placer sees them), then removed at start of next.
-
         self.eaten_pieces += current_eaten
         self.board = new_board
 
-    def _default_random_placer(self, board, count):
-        """Randomly places pieces on empty squares."""
+    def _placer_action_random(self, count=1):
+        """Randomly places `count` pieces on empty squares."""
         pieces_placed = 0
         attempts = 0
         last_placed = None
         while pieces_placed < count and attempts < 200:
             rx, ry = np.random.randint(0, W), np.random.randint(0, H)
-            if board[ry, rx] == 0:
-                board[ry, rx] = 1
+            if self.board[ry, rx] == 0:
+                self.board[ry, rx] = 1
                 pieces_placed += 1
                 last_placed = (ry, rx)
             attempts += 1
@@ -165,6 +148,7 @@ class RoutingGameEnv(gym.Env):
 
     def step(self, action):
         # 1. Apply Agent (Router) Action
+        # This will now update the ENTIRE board because edit_mask is all 1s
         self._apply_router_action(action)
 
         reward = 0
@@ -172,40 +156,30 @@ class RoutingGameEnv(gym.Env):
         truncated = False
         info = {}
 
-        # --- PHASE 2: Main Loop (Modify -> Sim -> Place) ---
         if self.phase == 2:
-            # 1. Simulate Step
+            # 2. Simulate Step
             self._simulation_step()
 
-            # 2. Placer Turn (if pieces left)
+            # 3. Placer Turn
             if self.placer_pieces_left > 0:
-                last_pos = self.placer_strategy(self.board, 1)
+                self._placer_action_random(1)
                 self.placer_pieces_left -= 1
 
-                # Setup next mask: New piece + Adjacent
-                self.edit_mask = np.zeros((H, W), dtype=np.uint8)
-                if last_pos:
-                    ly, lx = last_pos
-                    shifts = [(0, 0), (0, 1), (0, -1), (1, 0), (-1, 0)]
-                    for dy, dx in shifts:
-                        ny, nx = ly + dy, lx + dx
-                        if 0 <= ny < H and 0 <= nx < W:
-                            self.edit_mask[ny, nx] = 1
+                # Reset Mask to Full Board (Agent can fix routing anywhere)
+                self.edit_mask = np.ones((H, W), dtype=np.uint8)
 
-                # Stay in Phase 2
+                # Continue loop (Phase 2)
 
             else:
-                # 3. End Game Simulation (Phase 7)
-                # Run until empty or step limit
+                # 4. End Game Simulation (Phase 7)
                 step_count = 0
-                # Limit total run to prevent infinite loops if cycles exist
                 while np.sum(self.board) > 0 and step_count < 25:
                     self._simulation_step()
                     step_count += 1
 
                 self.steps_in_phase_7 = step_count
 
-                # Score: Steps + 10 * Eaten + 10 * Leftover
+                # Score Calculation
                 pieces_left = np.sum(self.board)
                 score = (
                     self.steps_in_phase_7
@@ -213,7 +187,7 @@ class RoutingGameEnv(gym.Env):
                     + (10 * pieces_left)
                 )
 
-                # Reward is negative score
+                # Negative score for reward (Minimize score)
                 reward = -float(score)
                 terminated = True
 
@@ -222,6 +196,7 @@ class RoutingGameEnv(gym.Env):
     def render(self):
         print("-" * 20)
         print(f"Phase: {self.phase}, Eaten: {self.eaten_pieces}")
+        # 1=^, 2=>, 3=v, 4=<
         DIR_SYMBOLS = {1: "^", 2: ">", 3: "v", 4: "<"}
         for y in range(H):
             line = ""
