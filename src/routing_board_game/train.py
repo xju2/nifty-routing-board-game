@@ -2,17 +2,14 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import EvalCallback
 from routing_board_game.game_env import RoutingGameEnv
-import numpy as np
 
 
 def train(placer_extra_pieces):
-    test_env = RoutingGameEnv()
-    print(f"DEBUG: Action Space Shape: {test_env.action_space.shape}")
-    print(f"DEBUG: Action Space Nvec Sum: {np.sum(test_env.action_space.nvec)}")
-
     # Create the environment
     # We wrap it in a Vectorized Environment for faster training
-    env = make_vec_env(lambda: RoutingGameEnv(placer_extra_pieces=placer_extra_pieces), n_envs=4)
+    env = make_vec_env(
+        lambda: RoutingGameEnv(placer_extra_pieces=placer_extra_pieces), n_envs=4
+    )
 
     # Instantiate the agent
     # Using MultiInputPolicy because our observation is a Dict
@@ -29,16 +26,16 @@ def train(placer_extra_pieces):
     eval_env = RoutingGameEnv(placer_extra_pieces=placer_extra_pieces)
     eval_callback = EvalCallback(
         eval_env,
-        best_model_save_path='./logs/',
-        log_path='./logs/',
+        best_model_save_path="./logs/",
+        log_path="./logs/",
         eval_freq=5000,
         deterministic=True,
-        render=False
+        render=False,
     )
 
     print("Starting training...")
     # Train the agent
-    model.learn(total_timesteps=100000, callback=eval_callback)
+    model.learn(total_timesteps=100_000, callback=eval_callback)
     print("Training finished.")
 
     model.save("ppo_router_agent")
