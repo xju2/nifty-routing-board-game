@@ -1,11 +1,15 @@
 const canvas = document.getElementById('c');
 const hudMode = document.getElementById('mode');
+const randomRoutesBtn = document.getElementById('randomRoutes');
 const gl = canvas.getContext('webgl2', {antialias: true});
 if (!gl) throw new Error('Graphics support required');
 
 let wasm, memory;
 const textDec = new TextDecoder();
 const textEnc = new TextEncoder();
+const W = 10;
+const H = 10;
+const BOARD_SIZE = W * H;
 
 // Handle pools
 const shaders = [];
@@ -220,9 +224,8 @@ async function updateAI() {
   const dirPtr = wasm.exports.get_dir_ptr();
 
   // 2. Read current state from WASM memory
-  // We read 100 bytes (10x10 board)
-  const boardData = Array.from(u8().subarray(occPtr, occPtr + 100));
-  const dirData = Array.from(u8().subarray(dirPtr, dirPtr + 100));
+  const boardData = Array.from(u8().subarray(occPtr, occPtr + BOARD_SIZE));
+  const dirData = Array.from(u8().subarray(dirPtr, dirPtr + BOARD_SIZE));
 
   // 3. Send to Python Server
   try {
@@ -241,7 +244,7 @@ async function updateAI() {
     // RL policy outputs 0-3, but the sim expects 1-4 (DIR_UP..DIR_LEFT).
     const newDirs = result.new_directions;
     const heap = u8();
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < BOARD_SIZE; i++) {
         const a = newDirs[i];
         heap[dirPtr + i] = (a >= 0 && a <= 3) ? (a + 1) : a; // map to env dir codes
     }
@@ -249,4 +252,19 @@ async function updateAI() {
   } catch (err) {
     console.error("AI Update Failed:", err);
   }
+}
+
+function randomizeRouting() {
+  if (!wasm) return;
+  // Clear routing to reset history/invalid flashes, then fill with random 1-4 dirs.
+  wasm.exports.on_key('D'.charCodeAt(0), 1);
+  const dirPtr = wasm.exports.get_dir_ptr();
+  const heap = u8();
+  for (let i = 0; i < BOARD_SIZE; i++) {
+    heap[dirPtr + i] = 1 + Math.floor(Math.random() * 4);
+  }
+}
+
+if (randomRoutesBtn) {
+  randomRoutesBtn.addEventListener('click', randomizeRouting);
 }

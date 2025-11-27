@@ -11,6 +11,9 @@
   .kbd {padding:1px 4px;border-radius:3px;background:#222;color:#ddd;border:1px solid #333;font:11px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   .sep {opacity:.6}
   .small {font-size:11px}
+  .btn {padding:4px 8px;border-radius:4px;background:#27272d;color:#e6e6ea;border:1px solid #3a3a3f;cursor:pointer}
+  .btn:hover {background:#2f2f36}
+  .btn:active {background:#26262d}
   canvas {width:100vw;height:100vh;display:block}
 </style>
 <div id="hud">
@@ -38,6 +41,7 @@
     <li><span class="kbd">Space</span> run/pause • <span class="kbd">S</span> step • <span class="kbd">Z</span> step back</li>
     <li><span class="kbd">R</span> reset • <span class="kbd">C</span> clear pieces • <span class="kbd">D</span> clear routes</li>
     <li><span class="kbd">1</span>…<span class="kbd">9</span> (<span class="kbd">0</span>=10) place that many pieces randomly</li>
+    <li><button id="randomRoutes" class="btn">Randomize routes</button></li>
   </ul>
 </div>
 <canvas id="c"></canvas>
