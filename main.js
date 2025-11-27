@@ -22,6 +22,7 @@ const W = 10;
 const H = 10;
 const BOARD_SIZE = W * H;
 let editingLocked = false;
+const API_BASE = ((window.API_BASE ?? "https://iaasdemo.ml4phys.com/nifty-ai") || "").replace(/\/$/, "");
 
 function toggleEditingLock() {
   editingLocked = !editingLocked;
@@ -298,7 +299,7 @@ async function updateAI() {
 
   // 3. Send to Python Server
   try {
-    const response = await fetch('/get_action', {
+    const response = await fetch(`${API_BASE}/get_action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
