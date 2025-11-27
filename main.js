@@ -238,13 +238,12 @@ async function updateAI() {
     const result = await response.json();
 
     // 4. Write new directions back to WASM memory
+    // RL policy outputs 0-3, but the sim expects 1-4 (DIR_UP..DIR_LEFT).
     const newDirs = result.new_directions;
     const heap = u8();
     for (let i = 0; i < 100; i++) {
-        // Only update if there is a piece there (optional, but cleaner)
-        if (boardData[i] === 1) {
-            heap[dirPtr + i] = newDirs[i];
-        }
+        const a = newDirs[i];
+        heap[dirPtr + i] = (a >= 0 && a <= 3) ? (a + 1) : a; // map to env dir codes
     }
 
   } catch (err) {
