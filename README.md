@@ -72,3 +72,7 @@ Training the AI agent.
 ```bash
 uv run nifty train --placer_extra_pieces 5 --total_timesteps 1000000
 ```
+Start the server:
+```bash
+uv run nifty server --model_path logs/best_model.zip
+```

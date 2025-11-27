@@ -39,7 +39,7 @@ def play(model_path):
 
 
 # start AI routing server
-@click.command("start-route-ai")
+@click.command("server")
 @click.option(
     "--model_path",
     default="ppo_router_agent_single_file.zip",
