@@ -10,6 +10,8 @@ const btnClearPieces = document.getElementById('btnClearPieces');
 const btnClearRoutes = document.getElementById('btnClearRoutes');
 const btnRandPieces = document.getElementById('btnRandPieces');
 const randPiecesCount = document.getElementById('randPiecesCount');
+const editLock = document.getElementById('editLock');
+const btnLock = document.getElementById('btnLock');
 const gl = canvas.getContext('webgl2', {antialias: true});
 if (!gl) throw new Error('Graphics support required');
 
@@ -19,6 +21,12 @@ const textEnc = new TextEncoder();
 const W = 10;
 const H = 10;
 const BOARD_SIZE = W * H;
+let editingLocked = false;
+
+function toggleEditingLock() {
+  editingLocked = !editingLocked;
+  applyLockVisuals();
+}
 
 function applyModeVisuals(mode) {
   const normalized = (mode || "").toLowerCase();
@@ -33,6 +41,13 @@ function applyModeVisuals(mode) {
 }
 applyModeVisuals(hudMode?.textContent || "Placement");
 
+function applyLockVisuals() {
+  if (editLock) editLock.textContent = editingLocked ? "Locked" : "Unlocked";
+  if (btnLock) btnLock.textContent = editingLocked ? "Unlock editing (L)" : "Lock editing (L)";
+  document.body.dataset.edit = editingLocked ? "locked" : "unlocked";
+}
+applyLockVisuals();
+
 // Handle pools
 const shaders = [];
 const programs = [];
@@ -44,6 +59,27 @@ const textures = [];
 // Heap views
 const u8  = () => new Uint8Array(memory.buffer);
 const f32 = () => new Float32Array(memory.buffer);
+
+function snapshotBoardState() {
+  if (!wasm) return null;
+  const occPtr = wasm.exports.get_board_ptr();
+  const dirPtr = wasm.exports.get_dir_ptr();
+  const heap = u8();
+  return {
+    occ: heap.slice(occPtr, occPtr + BOARD_SIZE),
+    dir: heap.slice(dirPtr, dirPtr + BOARD_SIZE),
+  };
+}
+
+function boardStateChanged(before, after) {
+  if (!before || !after) return false;
+  const { occ: bOcc, dir: bDir } = before;
+  const { occ: aOcc, dir: aDir } = after;
+  for (let i = 0; i < BOARD_SIZE; i++) {
+    if (bOcc[i] !== aOcc[i] || bDir[i] !== aDir[i]) return true;
+  }
+  return false;
+}
 
 // Helpers
 function cstr(ptr) {
@@ -180,7 +216,7 @@ resize();
 wasm.exports.init();
 
 function sendPointer(e, type) {
-  if (!wasm) return;
+  if (!wasm || editingLocked) return;
   const rect = canvas.getBoundingClientRect();
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const x = Math.floor((e.clientX - rect.left) * dpr);
@@ -194,9 +230,15 @@ canvas.addEventListener('mousedown', e => {
   // prevent text selection and default behaviors for all buttons
   e.preventDefault();
   if (e.button === 2) { /* right button */ e.preventDefault(); }
+  const before = editingLocked ? null : snapshotBoardState();
   sendPointer(e, 1);
 
-  updateAI();  // Ask AI to route the pieces.
+  if (!editingLocked) {
+    const after = snapshotBoardState();
+    if (boardStateChanged(before, after)) {
+      updateAI();  // Ask AI to route only if board actually changed.
+    }
+  }
 });
 canvas.addEventListener('mousemove', e => sendPointer(e, 0));
 window.addEventListener('mouseup', e => sendPointer(e, 2));
@@ -219,6 +261,11 @@ function keyCodeFor(e) {
 window.addEventListener('keydown', e => {
   if (!wasm) return;
   const code = keyCodeFor(e);
+  if (e.code === 'KeyL') {
+    e.preventDefault(); e.stopPropagation();
+    toggleEditingLock();
+    return;
+  }
   if (code === 32) { e.preventDefault(); e.stopPropagation(); }
   if (code) wasm.exports.on_key(code, 1);
 }, {capture:true});
@@ -311,6 +358,7 @@ function bindButtons() {
     const code = n === 10 ? '0'.charCodeAt(0) : ('0'.charCodeAt(0) + n);
     sendKey(code);
   });
+  btnLock?.addEventListener('click', toggleEditingLock);
 }
 
 bindButtons();

@@ -22,12 +22,15 @@
   body[data-mode="placement"] #mode {background:#3b2b2b;color:#f1c3c3;border-color:#5c3c3c}
   body[data-mode="routing"] #btnMode {background:#24442f;border-color:#31573f}
   body[data-mode="placement"] #btnMode {background:#3a3030;border-color:#5a4141}
+  #editLock {display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;border:1px solid #3a3a3f;background:#2a2a30;color:#d8d8e0;font-weight:600}
+  body[data-edit="locked"] #editLock {background:#3b2b2b;color:#f1c3c3;border-color:#5c3c3c}
+  body[data-edit="unlocked"] #editLock {background:#1f3b2b;color:#c2f5d0;border-color:#2f5c3c}
   canvas {width:100vw;height:100vh;display:block}
 </style>
 <div id="hud">
   <h2>Routing Board Game</h2>
   <div class="small">Set each tile's arrow to route all pieces to the top output in the fewest turns — lower score wins.</div>
-  <div class="small">Mode: <span id="mode">Placement</span> <span class="sep">•</span> <span class="kbd">M</span> toggle mode</div>
+  <div class="small">Mode: <span id="mode">Placement</span> <span class="sep">•</span> <span class="kbd">M</span> toggle mode <span class="sep">•</span> Edit: <span id="editLock">Locked</span> (<span class="kbd">L</span>)</div>
   <h2>Objective</h2>
   <ul>
     <li>Route all pieces to the top output tile in as few <b>turns</b> as possible.</li>
@@ -53,6 +56,7 @@
     <button id="btnReset" class="btn">Reset (R)</button>
     <button id="btnClearPieces" class="btn">Clear pieces (C)</button>
     <button id="btnClearRoutes" class="btn">Clear routes (D)</button>
+    <button id="btnLock" class="btn">Unlock editing (L)</button>
   </div>
   <div class="btn-row">
     <label>Random pieces
