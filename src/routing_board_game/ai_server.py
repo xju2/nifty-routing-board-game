@@ -3,6 +3,7 @@ from typing import Optional
 
 import numpy as np
 from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
 from stable_baselines3 import PPO
 
 # Constants for the board layout
@@ -33,6 +34,9 @@ def create_app(model_path: str, static_root: Optional[str | Path] = None) -> Fla
         raise RuntimeError(f"Could not load model from '{model_file}': {exc}") from exc
 
     app = Flask(__name__, static_folder=static_root_str)
+
+    # Allow browser clients (GitHub Pages, etc.) to call the API
+    CORS(app)
 
     @app.route("/")
     def index():
