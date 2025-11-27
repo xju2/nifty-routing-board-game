@@ -1,4 +1,5 @@
 import click
+from routing_board_game.ai_server import start_route_ai_server
 from routing_board_game.train import train as _train
 from routing_board_game.play_game import play_game as _play_game
 
@@ -37,5 +38,35 @@ def play(model_path):
     _play_game(model_path)
 
 
+# start AI routing server
+@click.command("start-route-ai")
+@click.option(
+    "--model_path",
+    default="ppo_router_agent_single_file.zip",
+    show_default=True,
+    help="Path to the trained model file.",
+)
+@click.option(
+    "--host",
+    default="127.0.0.1",
+    show_default=True,
+    help="Host interface to bind the AI server.",
+)
+@click.option(
+    "--port",
+    default=8000,
+    show_default=True,
+    type=int,
+    help="Port to bind the AI server.",
+)
+def start_route_ai(model_path, host, port):
+    """Start a Flask server that serves routing actions."""
+    try:
+        start_route_ai_server(model_path=model_path, host=host, port=port)
+    except Exception as exc:
+        raise click.ClickException(str(exc))
+
+
 main.add_command(train)
 main.add_command(play)
+main.add_command(start_route_ai)
