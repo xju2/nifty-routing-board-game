@@ -1,6 +1,15 @@
 const canvas = document.getElementById('c');
 const hudMode = document.getElementById('mode');
 const randomRoutesBtn = document.getElementById('randomRoutes');
+const btnMode = document.getElementById('btnMode');
+const btnRun = document.getElementById('btnRun');
+const btnStep = document.getElementById('btnStep');
+const btnBack = document.getElementById('btnBack');
+const btnReset = document.getElementById('btnReset');
+const btnClearPieces = document.getElementById('btnClearPieces');
+const btnClearRoutes = document.getElementById('btnClearRoutes');
+const btnRandPieces = document.getElementById('btnRandPieces');
+const randPiecesCount = document.getElementById('randPiecesCount');
 const gl = canvas.getContext('webgl2', {antialias: true});
 if (!gl) throw new Error('Graphics support required');
 
@@ -10,6 +19,19 @@ const textEnc = new TextEncoder();
 const W = 10;
 const H = 10;
 const BOARD_SIZE = W * H;
+
+function applyModeVisuals(mode) {
+  const normalized = (mode || "").toLowerCase();
+  const isRouting = normalized === "routing";
+  if (hudMode) {
+    hudMode.textContent = mode;
+  }
+  if (btnMode) {
+    btnMode.textContent = isRouting ? "Switch to placement (M)" : "Switch to routing (M)";
+  }
+  document.body.dataset.mode = isRouting ? "routing" : "placement";
+}
+applyModeVisuals(hudMode?.textContent || "Placement");
 
 // Handle pools
 const shaders = [];
@@ -48,7 +70,7 @@ const imports = {
   env: {
     // Debug + small helpers
     debug_log: (ptr) => console.log(cstr(ptr)),
-    set_mode_label: (ptr) => { if (hudMode) hudMode.textContent = cstr(ptr); },
+    set_mode_label: (ptr) => applyModeVisuals(cstr(ptr)),
 
     // no libc shims required; compiled with -ffreestanding -fno-builtin
 
@@ -268,3 +290,27 @@ function randomizeRouting() {
 if (randomRoutesBtn) {
   randomRoutesBtn.addEventListener('click', randomizeRouting);
 }
+
+function sendKey(code) {
+  if (!wasm) return;
+  wasm.exports.on_key(code, 1);
+}
+
+function bindButtons() {
+  btnMode?.addEventListener('click', () => sendKey('M'.charCodeAt(0)));
+  btnRun?.addEventListener('click', () => sendKey(32)); // Space
+  btnStep?.addEventListener('click', () => sendKey('S'.charCodeAt(0)));
+  btnBack?.addEventListener('click', () => sendKey('Z'.charCodeAt(0)));
+  btnReset?.addEventListener('click', () => sendKey('R'.charCodeAt(0)));
+  btnClearPieces?.addEventListener('click', () => sendKey('C'.charCodeAt(0)));
+  btnClearRoutes?.addEventListener('click', () => sendKey('D'.charCodeAt(0)));
+  btnRandPieces?.addEventListener('click', () => {
+    if (!randPiecesCount) return;
+    const n = Math.max(1, Math.min(10, parseInt(randPiecesCount.value || "0", 10) || 0));
+    randPiecesCount.value = String(n);
+    const code = n === 10 ? '0'.charCodeAt(0) : ('0'.charCodeAt(0) + n);
+    sendKey(code);
+  });
+}
+
+bindButtons();
