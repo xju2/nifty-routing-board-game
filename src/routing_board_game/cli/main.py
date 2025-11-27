@@ -59,10 +59,18 @@ def play(model_path):
     type=int,
     help="Port to bind the AI server.",
 )
-def start_route_ai(model_path, host, port):
+@click.option(
+    "--base_path",
+    default="",
+    show_default=True,
+    help="Optional base path if served behind a path prefix (e.g., /nifty-ai).",
+)
+def start_route_ai(model_path, host, port, base_path):
     """Start a Flask server that serves routing actions."""
     try:
-        start_route_ai_server(model_path=model_path, host=host, port=port)
+        start_route_ai_server(
+            model_path=model_path, host=host, port=port, base_path=base_path
+        )
     except Exception as exc:
         raise click.ClickException(str(exc))
 

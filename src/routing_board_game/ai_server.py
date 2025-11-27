@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -10,6 +11,12 @@ from stable_baselines3 import PPO
 W, H = 10, 10
 
 
+def _normalize_base_path(base_path: Optional[str]) -> str:
+    if not base_path:
+        return ""
+    return "/" + base_path.strip("/")
+
+
 def _resolve_static_root(static_root: Optional[str | Path]) -> Path:
     """Figure out where to serve static assets from (defaults to repo root)."""
     if static_root is None:
@@ -17,10 +24,15 @@ def _resolve_static_root(static_root: Optional[str | Path]) -> Path:
     return Path(static_root).resolve()
 
 
-def create_app(model_path: str, static_root: Optional[str | Path] = None) -> Flask:
+def create_app(
+    model_path: str,
+    static_root: Optional[str | Path] = None,
+    base_path: str = "",
+) -> Flask:
     """Create a Flask app that serves the routing AI."""
     static_root_path = _resolve_static_root(static_root)
     static_root_str = str(static_root_path)
+    base = _normalize_base_path(base_path)
 
     model_file = Path(model_path).expanduser()
     if not model_file.exists():
@@ -38,16 +50,27 @@ def create_app(model_path: str, static_root: Optional[str | Path] = None) -> Fla
     # Allow browser clients (GitHub Pages, etc.) to call the API
     CORS(app)
 
-    @app.route("/")
+    @app.route(base or "/", methods=["GET"])
     def index():
+        if base:
+            return jsonify({"status": "ok", "base_path": base})
         return send_from_directory(static_root_str, "index.html")
 
-    @app.route("/<path:path>")
-    def serve_static(path):
-        return send_from_directory(static_root_str, path)
+    if not base:
 
-    @app.route("/get_action", methods=["POST"])
+        @app.route("/<path:path>")
+        def serve_static(path):
+            return send_from_directory(static_root_str, path)
+
+    @app.route(f"{base}/get_action", methods=["POST", "GET"])
     def get_action():
+        if request.method != "POST":
+            return jsonify(
+                {
+                    "status": "ok",
+                    "message": "POST board/directions JSON to this endpoint",
+                }
+            )
         data = request.json or {}
 
         try:
@@ -72,8 +95,10 @@ def start_route_ai_server(
     port: int = 8000,
     debug: bool = True,
     static_root: Optional[str | Path] = None,
+    base_path: str = "",
 ) -> None:
     """Start the routing AI Flask server."""
-    app = create_app(model_path=model_path, static_root=static_root)
+    base = base_path or os.getenv("NIFTY_BASE_PATH", "")
+    app = create_app(model_path=model_path, static_root=static_root, base_path=base)
     print(f"Starting AI Game Server on http://{host}:{port}")
     app.run(host=host, port=port, debug=debug)
