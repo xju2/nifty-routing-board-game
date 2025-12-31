@@ -68,7 +68,7 @@ def train_rl(num_ai_pieces, max_steps, total_timesteps, n_envs, algorithm, log_d
         total_timesteps=total_timesteps,
         n_envs=n_envs,
         algorithm=algorithm,
-        log_dir=log_dir
+        log_dir=log_dir,
     )
 
 
@@ -125,4 +125,3 @@ main.add_command(train)
 main.add_command(train_rl)
 main.add_command(play)
 main.add_command(start_route_ai)
-
