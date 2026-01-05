@@ -1,7 +1,7 @@
 # Implementation Summary: Gymnasium RL Environment
 
 ## Overview
-This implementation provides a complete Gymnasium-compatible RL environment for a grid-based routing board game where AI pieces attempt to reach a root square while a user places blocking pieces to impede their progress.
+This implementation provides a complete Gymnasium-compatible RL environment for a grid-based routing board game where AI pieces attempt to reach a root square while a user can introduce additional pieces that immediately join the AI-controlled swarm.
 
 ## Files Created/Modified
 
@@ -55,7 +55,7 @@ This implementation provides a complete Gymnasium-compatible RL environment for 
 - ✅ 10×10 grid with (0,0) at top-left
 - ✅ Root square at (0, 5) with unlimited capacity
 - ✅ 8 AI pieces (configurable) randomly placed
-- ✅ Blocking pieces placed by user actions
+- ✅ User placements create new AI-controlled pieces
 - ✅ No overlap validation
 
 ### 2. Movement Rules
@@ -73,7 +73,7 @@ This implementation provides a complete Gymnasium-compatible RL environment for 
 
 ### 4. Turn Structure
 - ✅ One env.step = full turn
-- ✅ User blocking phase (place one piece)
+- ✅ User placement phase (place one piece that becomes AI-controlled)
 - ✅ AI routing phase (move all pieces sequentially)
 - ✅ Each piece moves exactly once per turn
 - ✅ Deterministic termination
@@ -133,7 +133,7 @@ from routing_board_game.routing_env import RoutingBoardGameEnv
 env = RoutingBoardGameEnv(num_ai_pieces=8, max_steps=10)
 obs, info = env.reset(seed=42)
 
-action = 45  # Place blocking at (4, 5)
+action = 45  # Place a user piece at (4, 5) that will start routing
 obs, reward, terminated, truncated, info = env.step(action)
 ```
 

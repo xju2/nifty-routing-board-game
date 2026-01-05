@@ -1,8 +1,8 @@
 """
 Training script for the RoutingBoardGameEnv using Stable-Baselines3.
 
-This script trains a reinforcement learning agent to place blocking pieces
-to prevent AI pieces from reaching the root.
+This script trains a reinforcement learning agent to place user pieces that
+immediately become AI-controlled movers toward the root.
 """
 
 from stable_baselines3 import PPO, DQN
@@ -147,7 +147,7 @@ def train_routing_agent(
         step_count += 1
 
         print(f"\nStep {step_count}:")
-        print(f"  Action: place blocking at ({action // 10}, {action % 10})")
+        print(f"  Action: place piece at ({action // 10}, {action % 10})")
         print(f"  Reward: {reward:.2f}")
         print(f"  Info: {info}")
 

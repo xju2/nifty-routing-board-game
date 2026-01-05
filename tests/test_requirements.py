@@ -4,8 +4,8 @@ Comprehensive tests to verify all requirements from the issue are met.
 This test suite validates:
 1. Board and pieces setup
 2. Movement rules (4-directional, forward moves)
-3. Dynamic blocking semantics
-4. Turn structure (user blocking + AI routing)
+3. User-placed blocking pieces becoming AI-controlled movers
+4. Turn structure (user placement + AI routing)
 5. Rewards
 6. Termination conditions
 """
@@ -49,7 +49,7 @@ def test_manhattan_distance():
     root = env.root_pos  # (0, 5)
 
     # Distance from (0, 5) to (0, 5) = 0
-    assert env._manhattan_distance((0, 5)) == 0
+    assert env._manhattan_distance(root) == 0
 
     # Distance from (0, 0) to (0, 5) = 5
     assert env._manhattan_distance((0, 0)) == 5
@@ -103,7 +103,6 @@ def test_dynamic_blocking():
     # A at (2, 5), B at (1, 5), root at (0, 5)
     # A is blocked by B initially
     env.ai_pieces = [(2, 5), (1, 5), (5, 3)]
-    env.blocking_pieces = set()
     env.board = np.zeros((10, 10), dtype=np.uint8)
     env.board[env.root_pos] = 3
     for pos in env.ai_pieces:
@@ -122,25 +121,59 @@ def test_dynamic_blocking():
     print("✓ Dynamic blocking works correctly")
 
 
+def test_blocking_piece_becomes_ai_piece():
+    """Test that user-placed blocking pieces convert into AI-controlled movers."""
+    print("\nTesting user placement creating a new AI piece...")
+
+    env = RoutingBoardGameEnv(num_ai_pieces=0, max_steps=10)
+    obs, info = env.reset(seed=101)
+
+    assert info.get("pieces_spawned_total", 0) == 0
+
+    action = 72  # (7,2) safely away from root
+    obs, reward, terminated, truncated, info = env.step(action)
+
+    assert info["placement_success"], "Placement should work on an empty board"
+    assert info["user_pieces_added"] == 1, "User piece counter should increment"
+    assert (
+        info["pieces_spawned_total"] == 1
+    ), "Total spawned should reflect the user piece"
+    assert len(env.ai_pieces) == 1, "AI pieces should now include the placed piece"
+    assert env.board[env.ai_pieces[0]] == 1, "Board should mark the new AI piece"
+
+    print("✓ User-placed pieces become movable AI pieces")
+
+
 def test_turn_structure():
-    """Test that one env.step executes user blocking + AI routing phase."""
+    """Test that one env.step executes user placement + AI routing phase."""
     print("\nTesting turn structure...")
 
     env = RoutingBoardGameEnv(num_ai_pieces=4, max_steps=10)
     obs, info = env.reset(seed=42)
 
     initial_pieces = len(env.ai_pieces)
+    assert initial_pieces > 0, "Should start with some AI pieces"
+    initial_spawned = env.pieces_spawned
 
     # Take one step
-    action = 45  # Place blocking piece at some position
+    action = 45  # Place a user piece at some position
     obs, reward, terminated, truncated, info = env.step(action)
 
-    # Verify blocking piece was placed (if valid position)
-    if info["placement_success"]:
-        assert len(env.blocking_pieces) > 0, "Blocking piece should be placed"
+    # Verify the user piece increases total spawn count if placed successfully
+    expected_spawned = initial_spawned + (1 if info["placement_success"] else 0)
+    assert (
+        info["pieces_spawned_total"] == expected_spawned
+    ), "Spawn count should include user placement when valid"
+    assert info["user_pieces_added"] in (
+        0,
+        1,
+    ), "User piece counter should be 0 or 1 after first move"
 
-    # Verify AI pieces may have moved (some may have reached root)
-    assert len(env.ai_pieces) <= initial_pieces, "AI pieces should not increase"
+    # Verify conservation: routed + remaining equals spawned
+    assert (
+        info["pieces_routed_total"] + info["pieces_remaining"]
+        == info["pieces_spawned_total"]
+    ), "Pieces should be conserved between spawned, routed, and remaining"
 
     # Step count should increase
     assert info["step_count"] == 1, "Step count should be 1"
@@ -197,31 +230,26 @@ def test_termination_failure():
     """Test termination when all pieces are blocked."""
     print("\nTesting termination on failure...")
 
-    env = RoutingBoardGameEnv(num_ai_pieces=2, max_steps=20)
+    env = RoutingBoardGameEnv(num_ai_pieces=0, max_steps=20)
     env.reset(seed=42)
 
-    # Set up a scenario where all pieces are blocked
-    # Place pieces and blocking pieces so no forward moves exist
-    env.ai_pieces = [(9, 0), (9, 9)]
-    env.blocking_pieces = {(8, 0), (9, 1), (8, 9), (9, 8)}
+    # Synthetic scenario: place a piece directly on the root so it has no forward moves
+    env.ai_pieces = [env.root_pos]
+    env.pieces_spawned = len(env.ai_pieces)
     env.board = np.zeros((10, 10), dtype=np.uint8)
     env.board[env.root_pos] = 3
-    for pos in env.ai_pieces:
-        env.board[pos] = 1
-    for pos in env.blocking_pieces:
-        env.board[pos] = 2
 
-    # Verify all pieces are blocked
-    all_blocked = all(env._is_piece_blocked(pos) for pos in env.ai_pieces)
+    # Verify the piece is blocked
+    assert env._is_piece_blocked(
+        env.root_pos
+    ), "Piece on root should have no forward moves"
 
-    if all_blocked:
-        # Take step - should terminate
-        action = 50
-        obs, reward, terminated, truncated, info = env.step(action)
-        assert terminated, "Episode should terminate when all pieces are blocked"
-        print("✓ Termination on failure works")
-    else:
-        print("✓ (Not all pieces blocked in this scenario)")
+    # Take step - should terminate because all pieces are blocked
+    action = 50
+    obs, reward, terminated, truncated, info = env.step(action)
+    assert terminated, "Episode should terminate when all pieces are blocked"
+    assert reward < 0, "Blocked termination should incur penalty"
+    print("✓ Termination on failure works")
 
 
 def test_max_steps_truncation():
@@ -317,9 +345,9 @@ def test_pieces_move_once_per_turn():
 
     # Distance reduced should be close to the number of pieces that moved but didn't route
     # (allowing some pieces to be blocked)
-    assert distance_reduced <= len(initial_positions), (
-        "Each piece should move at most once"
-    )
+    assert distance_reduced <= len(
+        initial_positions
+    ), "Each piece should move at most once"
 
     print("✓ Pieces move once per turn")
 
@@ -335,6 +363,7 @@ def main():
         test_manhattan_distance()
         test_forward_moves()
         test_dynamic_blocking()
+        test_blocking_piece_becomes_ai_piece()
         test_turn_structure()
         test_rewards()
         test_termination_success()
@@ -352,8 +381,9 @@ def main():
         print("  ✓ AI pieces: 8 default, randomly placed")
         print("  ✓ Movement: 4-directional, forward moves only")
         print("  ✓ Manhattan distance: correctly calculated")
+        print("  ✓ User pieces: placements become AI-controlled movers")
         print("  ✓ Dynamic blocking: recomputed after each move")
-        print("  ✓ Turn structure: user blocking + AI routing")
+        print("  ✓ Turn structure: user placement + AI routing")
         print("  ✓ Rewards: -1 per phase, +1 per routed piece")
         print("  ✓ Termination: success/failure/max steps")
         print("  ✓ No GUI dependencies")

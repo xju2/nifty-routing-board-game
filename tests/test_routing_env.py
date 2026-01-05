@@ -14,7 +14,7 @@ def test_basic_functionality():
 
     # Test reset
     obs, info = env.reset(seed=42)
-    print(f"✓ Environment reset successful")
+    print("✓ Environment reset successful")
     print(f"  Board shape: {obs['board'].shape}")
     print(f"  Step count: {obs['step_count'][0]}")
 
@@ -32,7 +32,7 @@ def test_basic_functionality():
     assert root_count == 1, "Should have exactly one root square"
     assert obs["board"][0, 5] == 3, "Root should be at (0, 5)"
 
-    print(f"✓ Initial state verified")
+    print("✓ Initial state verified")
 
     return env
 
@@ -52,7 +52,7 @@ def test_random_episode():
     truncated = False
 
     while not (terminated or truncated):
-        # Random action (place blocking piece)
+        # Random action (place a user-added piece)
         action = env.action_space.sample()
 
         obs, reward, terminated, truncated, info = env.step(action)
@@ -72,7 +72,7 @@ def test_random_episode():
             print("  (Stopping after 20 steps for safety)")
             break
 
-    print(f"\n✓ Episode completed")
+    print("\n✓ Episode completed")
     print(f"  Total steps: {steps}")
     print(f"  Total reward: {episode_reward:.2f}")
     print(f"  Terminated: {terminated}")
@@ -132,7 +132,7 @@ def test_movement_rules():
 
     # Take a few steps
     for i in range(5):
-        # Place blocking piece at random location
+        # Place a user piece at random location
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
 
@@ -145,7 +145,43 @@ def test_movement_rules():
             print("  Episode ended")
             break
 
-    print(f"\n✓ Movement rules test completed")
+    print("\n✓ Movement rules test completed")
+
+
+def test_user_piece_turns_into_ai():
+    """Ensure user-placed blocking pieces convert into AI-controlled pieces."""
+    print("\nTesting conversion of blocking pieces into AI pieces...")
+
+    env = RoutingBoardGameEnv(num_ai_pieces=0, max_steps=10, reward_shaping=False)
+    obs, info = env.reset(seed=7)
+
+    assert len(env.ai_pieces) == 0, "Should start with zero AI pieces in this test"
+    assert info.get("pieces_spawned_total", 0) == 0
+
+    # Place a single piece away from the root so it cannot route immediately
+    action = 5 * 10 + 5  # (5,5)
+    obs, reward, terminated, truncated, info = env.step(action)
+
+    assert info[
+        "placement_success"
+    ], "User piece placement should succeed on empty board"
+    assert (
+        info["pieces_spawned_total"] == 1
+    ), "Total spawned should include the new piece"
+    assert info["user_pieces_added"] == 1, "User piece count should increment"
+    assert (
+        not terminated and not truncated
+    ), "Episode should continue after first placement"
+
+    # The newly placed piece should have moved closer to the root
+    assert len(env.ai_pieces) == 1, "New AI piece should remain on board after one move"
+    current_pos = env.ai_pieces[0]
+    placed_distance = env._manhattan_distance((5, 5))
+    assert (
+        env._manhattan_distance(current_pos) < placed_distance
+    ), "Piece should make forward progress"
+
+    print("✓ Blocking pieces now become movable AI pieces")
 
 
 def test_termination_conditions():
@@ -170,7 +206,7 @@ def test_termination_conditions():
     assert obs["step_count"][0] == 0, "Step count should reset to 0"
     print("    ✓ Reset after termination works")
 
-    print(f"\n✓ Termination conditions test completed")
+    print("\n✓ Termination conditions test completed")
 
 
 def main():
@@ -181,10 +217,11 @@ def main():
 
     try:
         # Run tests
-        env = test_basic_functionality()
+        test_basic_functionality()
         test_random_episode()
         test_multiple_episodes()
         test_movement_rules()
+        test_user_piece_turns_into_ai()
         test_termination_conditions()
 
         print("\n" + "=" * 60)

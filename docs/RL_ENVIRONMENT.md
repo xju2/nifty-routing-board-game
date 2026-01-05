@@ -1,6 +1,6 @@
 # Routing Board Game - RL Environment
 
-This directory contains a Gymnasium-compatible RL environment for a grid-based routing board game where an AI agent must place blocking pieces to prevent opponent pieces from reaching a root square.
+This directory contains a Gymnasium-compatible RL environment for a grid-based routing board game where the user can add new pieces each turn that immediately become AI-controlled and route toward a root square.
 
 ## Game Overview
 
@@ -10,11 +10,11 @@ This directory contains a Gymnasium-compatible RL environment for a grid-based r
 
 ### Pieces
 - **AI Pieces**: 8 pieces (configurable) that try to reach the root
-- **Blocking Pieces**: User-controlled pieces that obstruct AI pieces
+- **User Pieces**: User-controlled pieces placed each turn; once placed they become AI-controlled movers toward the root
 
 ### Turn Structure
 Each `env.step(action)` executes:
-1. **User Blocking Phase**: Place one blocking piece on the board
+1. **User Placement Phase**: Place one piece on the board (it immediately becomes an AI piece)
 2. **AI Routing Phase**: Move all AI pieces sequentially toward root
    - Each piece moves once per turn
    - Pieces move 4-directionally (up/down/left/right)
@@ -58,7 +58,7 @@ env = RoutingBoardGameEnv(
 obs, info = env.reset(seed=42)
 
 # Take a step
-action = 45  # Place blocking piece at position (4, 5)
+action = 45  # Place a user piece at position (4, 5)
 obs, reward, terminated, truncated, info = env.step(action)
 
 # Render
@@ -90,16 +90,21 @@ nifty train-rl --num_ai_pieces 8 --max_steps 10 --total_timesteps 100000
 The observation is a dictionary containing:
 - `board`: 10×10 grid with:
   - 0 = empty
-  - 1 = AI piece
-  - 2 = blocking piece
+  - 1 = AI piece (including user-placed)
   - 3 = root
 - `step_count`: Current step number
 
 ### Action Space
 
 Discrete action space with 100 actions (one for each board position):
-- Action `n` places a blocking piece at position `(n // 10, n % 10)`
+- Action `n` places a user piece at position `(n // 10, n % 10)` which then routes toward the root
 - Invalid placements (on occupied squares or root) are ignored
+
+### AI Move Policies
+
+AI movement is pluggable via a move policy:
+- Default: `GreedyPolicy` (randomly selects among forward moves that reduce Manhattan distance)
+- Custom: provide any `BaseMovePolicy` implementation to `RoutingBoardGameEnv(move_policy=...)` (e.g., wrap a neural net that scores forward moves).
 
 ## Testing
 

@@ -4,7 +4,7 @@ Example script demonstrating the RoutingBoardGameEnv.
 
 This script shows:
 1. How to create and reset the environment
-2. How to take actions (place blocking pieces)
+2. How to take actions (place user pieces)
 3. How the AI routing phase works
 4. How to interpret observations and rewards
 """
@@ -47,12 +47,12 @@ def main():
     while True:
         step += 1
 
-        # Sample random action (place blocking piece at random position)
+        # Sample random action (place user piece at random position)
         action = env.action_space.sample()
         row, col = action // 10, action % 10
 
         print(f"Step {step}:")
-        print(f"  Action: Place blocking piece at ({row}, {col})")
+        print(f"  Action: Place user piece at ({row}, {col})")
 
         # Take step
         obs, reward, terminated, truncated, info = env.step(action)
@@ -92,28 +92,30 @@ def main():
     print(f"  Total reward: {episode_reward:.2f}")
     print(f"  AI pieces routed to root: {info['pieces_routed_total']}")
     print(f"  AI pieces remaining: {info['pieces_remaining']}")
-    print(f"  Blocking pieces placed: {len(env.blocking_pieces)}")
+    print(
+        f"  Total pieces spawned (initial + user-added): {info['pieces_spawned_total']}"
+    )
+    print(f"  User pieces added: {info['user_pieces_added']}")
     print()
 
     # Demonstrate observation space
     print("Observation Space:")
     print("-" * 70)
     print(f"  Board shape: {obs['board'].shape}")
-    print(f"  Board encoding:")
-    print(f"    0 = empty")
-    print(f"    1 = AI piece")
-    print(f"    2 = blocking piece")
-    print(f"    3 = root")
+    print("  Board encoding:")
+    print("    0 = empty")
+    print("    1 = AI piece (including user-added)")
+    print("    3 = root")
     print(f"  Step count: {obs['step_count'][0]}")
     print()
 
     # Demonstrate action space
     print("Action Space:")
     print("-" * 70)
-    print(f"  Type: Discrete(100)")
-    print(f"  Actions represent grid positions:")
-    print(f"    Action n -> position (n // 10, n % 10)")
-    print(f"  Example: Action 45 -> position (4, 5)")
+    print("  Type: Discrete(100)")
+    print("  Actions represent grid positions:")
+    print("    Action n -> position (n // 10, n % 10)")
+    print("  Example: Action 45 -> position (4, 5)")
     print()
 
     print("=" * 70)
