@@ -1,82 +1,137 @@
-"""Move selection policies for AI pieces during the routing phase.
-
-Policies encapsulate how an AI piece chooses among legal forward moves. The
-environment keeps turn/episode logic; a policy only decides which move to take
-for a single piece when given the set of forward moves.
-"""
+"""Routing policies for deciding how to move all AI pieces in a turn."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 import numpy as np
 
 Position = Tuple[int, int]
+ForwardMoveFn = Callable[[Position, np.ndarray], List[Position]]
 
 
-class BaseMovePolicy(ABC):
-    """Abstract base for AI move selection."""
+class BaseRoutingPolicy(ABC):
+    """Abstract policy controlling the routing phase (all pieces in a turn)."""
 
     @abstractmethod
-    def select_move(
+    def plan_moves(
         self,
-        piece_pos: Position,
-        forward_moves: List[Position],
+        ai_pieces: List[Position],
         board: np.ndarray,
         root_pos: Position,
+        forward_move_fn: ForwardMoveFn,
         rng: np.random.Generator,
-    ) -> Position:
+    ) -> List[Tuple[Position, Position]]:
         """
-        Pick the destination for a piece given its legal forward moves.
-        Must return one of the provided `forward_moves`.
+        Return an ordered list of (src, dst) moves for this routing phase.
+        Each piece should move at most once; dst must be in forward_move_fn(src).
+
+        Why `forward_move_fn`? Policies often simulate moves on a board copy to
+        account for blocking/unblocking as pieces move. They must query the same
+        legality function the environment uses so every proposed destination is
+        valid under current occupancy and the forward-move rules.
         """
 
 
-class GreedyPolicy(BaseMovePolicy):
-    """Default policy: pick a random forward move (greedy hill-climb)."""
-
-    def select_move(
-        self,
-        piece_pos: Position,
-        forward_moves: List[Position],
-        board: np.ndarray,
-        root_pos: Position,
-        rng: np.random.Generator,
-    ) -> Position:
-        if not forward_moves:
-            raise ValueError("No forward moves available for selection")
-        if len(forward_moves) == 1:
-            return forward_moves[0]
-        return forward_moves[rng.integers(0, len(forward_moves))]
-
-
-class NeuralNetPolicy(BaseMovePolicy):
+class GreedyRoutingPolicy(BaseRoutingPolicy):
     """
-    Example NN-backed policy wrapper.
+    Default greedy hill-climbing policy (former built-in behavior).
 
-    Pass a callable `model_fn(board, piece_pos, forward_moves)` that returns
-    a score for each forward move (aligned with the list order). The move with
-    the highest score is selected.
+    Iteratively picks any piece with a forward move; if multiple moves exist,
+    chooses one uniformly at random. Recomputes blocking after every move.
+    """
+
+    def plan_moves(
+        self,
+        ai_pieces: List[Position],
+        board: np.ndarray,
+        root_pos: Position,
+        forward_move_fn: ForwardMoveFn,
+        rng: np.random.Generator,
+    ) -> List[Tuple[Position, Position]]:
+        moves: List[Tuple[Position, Position]] = []
+        board_state = board.copy()
+        pieces_to_move = list(ai_pieces)
+
+        while pieces_to_move:
+            moved_this_iteration = False
+            for i, pos in enumerate(pieces_to_move):
+                forward_moves = forward_move_fn(pos, board_state)
+                if not forward_moves:
+                    continue
+
+                if len(forward_moves) == 1:
+                    dst = forward_moves[0]
+                else:
+                    dst = forward_moves[rng.integers(0, len(forward_moves))]
+
+                # apply move on board_state to keep occupancy updated
+                if pos != root_pos:
+                    board_state[pos] = 0
+                if dst != root_pos:
+                    board_state[dst] = 1
+
+                moves.append((pos, dst))
+                pieces_to_move.pop(i)
+                moved_this_iteration = True
+                break
+
+            if not moved_this_iteration:
+                break  # remaining pieces cannot move
+
+        return moves
+
+
+class NeuralNetRoutingPolicy(BaseRoutingPolicy):
+    """
+    Example NN-backed policy: scores forward moves for each piece.
+
+    Provide `model_fn(board, piece_pos, forward_moves) -> scores`. The highest
+    scoring move is taken for each piece in order. Blocking is recomputed after
+    every move on the policy's working board copy.
     """
 
     def __init__(self, model_fn):
         self.model_fn = model_fn
 
-    def select_move(
+    def plan_moves(
         self,
-        piece_pos: Position,
-        forward_moves: List[Position],
+        ai_pieces: List[Position],
         board: np.ndarray,
         root_pos: Position,
+        forward_move_fn: ForwardMoveFn,
         rng: np.random.Generator,
-    ) -> Position:
-        if not forward_moves:
-            raise ValueError("No forward moves available for selection")
-        scores = self.model_fn(board, piece_pos, forward_moves)
-        # Expect iterable of scores; fall back to greedy if malformed
-        try:
-            best_idx = int(np.argmax(list(scores)))
-            return forward_moves[best_idx]
-        except Exception:
-            return forward_moves[rng.integers(0, len(forward_moves))]
+    ) -> List[Tuple[Position, Position]]:
+        moves: List[Tuple[Position, Position]] = []
+        board_state = board.copy()
+        pieces_to_move = list(ai_pieces)
+
+        while pieces_to_move:
+            moved_this_iteration = False
+            for i, pos in enumerate(pieces_to_move):
+                forward_moves = forward_move_fn(pos, board_state)
+                if not forward_moves:
+                    continue
+
+                try:
+                    scores = self.model_fn(board_state, pos, forward_moves)
+                    best_idx = int(np.argmax(list(scores)))
+                    dst = forward_moves[best_idx]
+                except Exception:
+                    dst = forward_moves[rng.integers(0, len(forward_moves))]
+
+                if pos != root_pos:
+                    board_state[pos] = 0
+                if dst != root_pos:
+                    board_state[dst] = 1
+
+                moves.append((pos, dst))
+                pieces_to_move.pop(i)
+                moved_this_iteration = True
+                break
+
+            if not moved_this_iteration:
+                break
+
+        return moves

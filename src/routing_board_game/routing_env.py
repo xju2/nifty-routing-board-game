@@ -11,7 +11,7 @@ from gymnasium import spaces
 import numpy as np
 from typing import Tuple, Optional, List
 
-from routing_board_game.policies import BaseMovePolicy, GreedyPolicy
+from routing_board_game.policies import BaseRoutingPolicy, GreedyRoutingPolicy
 
 
 class RoutingBoardGameEnv(gym.Env):
@@ -54,7 +54,7 @@ class RoutingBoardGameEnv(gym.Env):
         max_steps: int = 10,
         reward_shaping: bool = True,
         render_mode: Optional[str] = None,
-        move_policy: Optional[BaseMovePolicy] = None,
+        move_policy: Optional[BaseRoutingPolicy] = None,
     ):
         super().__init__()
 
@@ -64,7 +64,7 @@ class RoutingBoardGameEnv(gym.Env):
         self.max_steps = max_steps
         self.reward_shaping = reward_shaping
         self.render_mode = render_mode
-        self.move_policy: BaseMovePolicy = move_policy or GreedyPolicy()
+        self.move_policy: BaseRoutingPolicy = move_policy or GreedyRoutingPolicy()
 
         # Movement directions: up, down, left, right
         self.directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
@@ -146,11 +146,14 @@ class RoutingBoardGameEnv(gym.Env):
         """Calculate Manhattan distance from position to root."""
         return abs(pos[0] - self.root_pos[0]) + abs(pos[1] - self.root_pos[1])
 
-    def _get_forward_moves(self, pos: Tuple[int, int]) -> List[Tuple[int, int]]:
+    def _get_forward_moves(
+        self, pos: Tuple[int, int], board: Optional[np.ndarray] = None
+    ) -> List[Tuple[int, int]]:
         """
         Get all legal forward moves for a piece at given position.
         Forward move = reduces Manhattan distance to root.
         """
+        board_ref = board if board is not None else self.board
         current_dist = self._manhattan_distance(pos)
         forward_moves = []
 
@@ -169,7 +172,7 @@ class RoutingBoardGameEnv(gym.Env):
                 # Root can hold unlimited pieces
                 if new_pos == self.root_pos:
                     forward_moves.append(new_pos)
-                elif self.board[new_pos] == 0:
+                elif board_ref[new_pos] == 0:
                     # Only move into empty squares; board is updated as pieces move
                     forward_moves.append(new_pos)
 
@@ -209,7 +212,7 @@ class RoutingBoardGameEnv(gym.Env):
         self,
     ) -> Tuple[float, int, List[Tuple[Tuple[int, int], Tuple[int, int]]]]:
         """
-        Execute the AI routing phase: move all AI pieces once each.
+        Execute the AI routing phase using the configured routing policy.
 
         Returns:
             reward: reward for this routing phase
@@ -222,61 +225,42 @@ class RoutingBoardGameEnv(gym.Env):
         pieces_reached_root = 0
         move_sequence: List[Tuple[Tuple[int, int], Tuple[int, int]]] = []
 
-        # Track which pieces have been moved this turn
-        pieces_to_move = list(self.ai_pieces)
-        moved_pieces = []
+        # Ask policy to propose a routing plan for this turn
+        proposed_moves = self.move_policy.plan_moves(
+            ai_pieces=list(self.ai_pieces),
+            board=self.board.copy(),
+            root_pos=self.root_pos,
+            forward_move_fn=self._get_forward_moves,
+            rng=self.np_random,
+        )
 
-        # Keep moving pieces until all have moved or are blocked
-        while pieces_to_move:
-            # Find a piece that can move
-            moved_this_iteration = False
+        # Apply proposed moves sequentially with safety checks
+        current_positions = list(self.ai_pieces)
+        for src_pos, new_pos in proposed_moves:
+            if src_pos not in current_positions:
+                continue  # source no longer has a piece
 
-            for i, pos in enumerate(pieces_to_move):
-                forward_moves = self._get_forward_moves(pos)
+            forward_moves = self._get_forward_moves(src_pos)
+            if new_pos not in forward_moves:
+                continue  # invalid per current board state
 
-                if forward_moves:
-                    src_pos = pos
-                    new_pos = self.move_policy.select_move(
-                        piece_pos=pos,
-                        forward_moves=forward_moves,
-                        board=self.board,
-                        root_pos=self.root_pos,
-                        rng=self.np_random,
-                    )
-                    # Fallback safety: if policy returns invalid move, pick randomly
-                    if new_pos not in forward_moves:
-                        new_pos = forward_moves[
-                            self.np_random.integers(0, len(forward_moves))
-                        ]
+            # Clear old position
+            if src_pos != self.root_pos:
+                self.board[src_pos] = 0
+            current_positions.remove(src_pos)
 
-                    # Clear old position on board
-                    if pos != self.root_pos:
-                        self.board[pos] = 0
+            # Apply move
+            if new_pos == self.root_pos:
+                pieces_reached_root += 1
+                # routed piece removed from board
+            else:
+                current_positions.append(new_pos)
+                self.board[new_pos] = 1
 
-                    # Move piece
-                    pieces_to_move.pop(i)
-
-                    # Check if reached root
-                    if new_pos == self.root_pos:
-                        pieces_reached_root += 1
-                        # Don't add to moved_pieces (piece is removed from game)
-                        # Root is marked on board, don't change it
-                    else:
-                        moved_pieces.append(new_pos)
-                        self.board[new_pos] = 1
-                    move_sequence.append((src_pos, new_pos))
-
-                    moved_this_iteration = True
-                    break
-
-            # If no piece could move in this iteration, remaining pieces are blocked
-            if not moved_this_iteration:
-                # All remaining pieces are blocked
-                moved_pieces.extend(pieces_to_move)
-                break
+            move_sequence.append((src_pos, new_pos))
 
         # Update AI pieces list (excluding routed pieces)
-        self.ai_pieces = moved_pieces
+        self.ai_pieces = current_positions
 
         # Calculate reward
         reward = -1.0  # Base cost per routing phase

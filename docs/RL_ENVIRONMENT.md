@@ -100,11 +100,11 @@ Discrete action space with 100 actions (one for each board position):
 - Action `n` places a user piece at position `(n // 10, n % 10)` which then routes toward the root
 - Invalid placements (on occupied squares or root) are ignored
 
-### AI Move Policies
+### AI Routing Policies
 
-AI movement is pluggable via a move policy:
-- Default: `GreedyPolicy` (randomly selects among forward moves that reduce Manhattan distance)
-- Custom: provide any `BaseMovePolicy` implementation to `RoutingBoardGameEnv(move_policy=...)` (e.g., wrap a neural net that scores forward moves).
+The entire routing phase is pluggable via a routing policy:
+- Default: `GreedyRoutingPolicy` (iterative hill-climb; former built-in logic)
+- Custom: provide any `BaseRoutingPolicy` implementation to `RoutingBoardGameEnv(move_policy=...)`, e.g., a neural-net-driven planner that scores forward moves for each piece as it routes them.
 
 ## Testing
 
