@@ -15,8 +15,11 @@ updates within a turn.
 
 import sys
 import pygame
+import math
+import numpy as np
 
 from routing_board_game.routing_env import RoutingBoardGameEnv
+from routing_board_game.routing_policy_env import RoutingPolicyEnv
 
 
 CELL_SIZE = 60
@@ -35,10 +38,14 @@ HIGHLIGHT_SRC = (232, 80, 91)
 HIGHLIGHT_DST = (80, 200, 120)
 
 
-def draw_board(screen, font, board, root_pos, step_info, highlight=None):
+def draw_board(
+    screen, font, board, root_pos, step_info, highlight=None, bounce_positions=None
+):
     """Draw the grid, pieces, and sidebar info."""
     screen.fill(BG_COLOR)
     grid_size = board.shape[0]
+    bounce_positions = bounce_positions or set()
+    t_ms = pygame.time.get_ticks()
 
     # Draw cells
     for row in range(grid_size):
@@ -54,7 +61,12 @@ def draw_board(screen, font, board, root_pos, step_info, highlight=None):
                 pygame.draw.rect(screen, ROOT_COLOR, rect)
             # AI piece
             if board[row, col] == 1:
-                pygame.draw.ellipse(screen, AI_COLOR, rect.inflate(-10, -10))
+                if pos in bounce_positions:
+                    offset = int(4 * (1 + math.sin(t_ms / 180)))
+                else:
+                    offset = 0
+                bounce_rect = rect.inflate(-10, -10).move(0, -offset)
+                pygame.draw.ellipse(screen, AI_COLOR, bounce_rect)
 
     # Highlight current move
     if highlight:
@@ -91,7 +103,7 @@ def draw_board(screen, font, board, root_pos, step_info, highlight=None):
         f"Truncated: {step_info.get('truncated', False)}",
         "",
         "Controls:",
-        " Click: place piece",
+        " Click: place piece (policy: src then dst)",
         " Space: random action",
         " R: reset",
         " Q / Esc: quit",
@@ -142,7 +154,12 @@ def run_gui():
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("arial", 20)
 
-    env = RoutingBoardGameEnv(render_mode=None)
+    use_policy_env = "--policy" in sys.argv
+    env = (
+        RoutingPolicyEnv(render_mode=None)
+        if use_policy_env
+        else RoutingBoardGameEnv(render_mode=None)
+    )
     obs, info = env.reset(seed=42)
 
     board = obs["board"]
@@ -159,6 +176,8 @@ def run_gui():
     last_truncated = False
 
     running = True
+    run_gui._pending_src = None
+    last_moved_positions = set()
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -173,16 +192,19 @@ def run_gui():
                     last_info = info
                     last_terminated = False
                     last_truncated = False
+                    last_moved_positions = set()
                 elif event.key == pygame.K_SPACE and not (
                     last_terminated or last_truncated
                 ):
                     action = env.action_space.sample()
                     obs, reward, terminated, truncated, info = env.step(action)
-                    placement_pos = (
-                        (action // env.grid_size, action % env.grid_size)
-                        if info["placement_success"]
-                        else None
-                    )
+                    placement_pos = None
+                    if not isinstance(env, RoutingPolicyEnv):
+                        placement_pos = (
+                            (action // env.grid_size, action % env.grid_size)
+                            if info["placement_success"]
+                            else None
+                        )
                     step_info = {
                         "step": info["step_count"],
                         "max_steps": env.max_steps,
@@ -205,6 +227,9 @@ def run_gui():
                     last_info = info
                     last_terminated = terminated
                     last_truncated = truncated
+                    last_moved_positions = {
+                        dst for _, dst in info.get("move_sequence", [])
+                    }
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if last_terminated or last_truncated:
                     continue
@@ -213,31 +238,75 @@ def run_gui():
                 row = mouse_y // CELL_SIZE
 
                 if 0 <= row < grid_size and 0 <= col < grid_size:
-                    action = row * grid_size + col
-                    obs, reward, terminated, truncated, info = env.step(action)
-                    placement_pos = (row, col) if info["placement_success"] else None
-                    step_info = {
-                        "step": info["step_count"],
-                        "max_steps": env.max_steps,
-                        "reward": reward,
-                        **info,
-                        "terminated": terminated,
-                        "truncated": truncated,
-                    }
-                    animate_moves(
-                        screen,
-                        font,
-                        board,
-                        env.root_pos,
-                        step_info,
-                        info["move_sequence"],
-                        placement_pos=placement_pos,
-                    )
-                    board = obs["board"]
-                    last_reward = reward
-                    last_info = info
-                    last_terminated = terminated
-                    last_truncated = truncated
+                    if isinstance(env, RoutingPolicyEnv):
+                        # two-click selection: first selects src, second selects dst
+                        if not hasattr(run_gui, "_pending_src"):
+                            run_gui._pending_src = (row, col)
+                        else:
+                            src = run_gui._pending_src
+                            dst = (row, col)
+                            action = (
+                                src[0] * grid_size + src[1],
+                                dst[0] * grid_size + dst[1],
+                            )
+                            obs, reward, terminated, truncated, info = env.step(action)
+                            step_info = {
+                                "step": info["step_count"],
+                                "max_steps": env.max_steps,
+                                "reward": reward,
+                                **info,
+                                "terminated": terminated,
+                                "truncated": truncated,
+                            }
+                            animate_moves(
+                                screen,
+                                font,
+                                board,
+                                env.root_pos,
+                                step_info,
+                                info["move_sequence"],
+                                placement_pos=None,
+                            )
+                            board = obs["board"]
+                            last_reward = reward
+                            last_info = info
+                            last_terminated = terminated
+                            last_truncated = truncated
+                            last_moved_positions = {
+                                dst for _, dst in info.get("move_sequence", [])
+                            }
+                            run_gui._pending_src = None
+                    else:
+                        action = row * grid_size + col
+                        obs, reward, terminated, truncated, info = env.step(action)
+                        placement_pos = (
+                            (row, col) if info["placement_success"] else None
+                        )
+                        step_info = {
+                            "step": info["step_count"],
+                            "max_steps": env.max_steps,
+                            "reward": reward,
+                            **info,
+                            "terminated": terminated,
+                            "truncated": truncated,
+                        }
+                        animate_moves(
+                            screen,
+                            font,
+                            board,
+                            env.root_pos,
+                            step_info,
+                            info["move_sequence"],
+                            placement_pos=placement_pos,
+                        )
+                        board = obs["board"]
+                        last_reward = reward
+                        last_info = info
+                        last_terminated = terminated
+                        last_truncated = truncated
+                        last_moved_positions = {
+                            dst for _, dst in info.get("move_sequence", [])
+                        }
 
         # Update display
         current_info = {
@@ -248,7 +317,21 @@ def run_gui():
             "terminated": last_terminated,
             "truncated": last_truncated,
         }
-        draw_board(screen, font, board, env.root_pos, current_info)
+        bounce_positions = set()
+        if isinstance(env, RoutingPolicyEnv) and not (
+            last_terminated or last_truncated
+        ):
+            # Bounce all movable AI pieces except those that just moved (visual turn cue)
+            bounce_positions = {tuple(pos) for pos in zip(*np.where(board == 1))}
+            bounce_positions.difference_update(last_moved_positions)
+        draw_board(
+            screen,
+            font,
+            board,
+            env.root_pos,
+            current_info,
+            bounce_positions=bounce_positions,
+        )
         clock.tick(FPS)
 
         if last_terminated or last_truncated:
