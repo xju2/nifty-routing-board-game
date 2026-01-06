@@ -19,7 +19,6 @@ import math
 import numpy as np
 
 from routing_board_game.routing_env import RoutingBoardGameEnv
-from routing_board_game.routing_policy_env import RoutingPolicyEnv
 
 
 CELL_SIZE = 60
@@ -223,12 +222,7 @@ def run_gui():
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("arial", 20)
 
-    use_policy_env = "--policy" in sys.argv
-    env = (
-        RoutingPolicyEnv(render_mode=None)
-        if use_policy_env
-        else RoutingBoardGameEnv(render_mode=None)
-    )
+    env = RoutingBoardGameEnv(render_mode=None)
     obs, info = env.reset(seed=42)
 
     board = obs["board"]
@@ -339,9 +333,7 @@ def run_gui():
                 "truncated": last_truncated,
             }
             bounce_positions = set()
-            if isinstance(env, RoutingPolicyEnv) and not (
-                last_terminated or last_truncated
-            ):
+            if not (last_terminated or last_truncated):
                 # Bounce movable AI pieces during AI turn
                 if current_turn == "ai":
                     bounce_positions = {

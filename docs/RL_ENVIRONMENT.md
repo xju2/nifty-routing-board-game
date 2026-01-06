@@ -107,10 +107,8 @@ The entire routing phase is pluggable via a routing policy:
 
 ## PPO-friendly Routing Environment
 
-For end-to-end RL of routing decisions, use `RoutingPolicyEnv`:
-- Action space: `MultiDiscrete([100, 100])` representing `(src_index, dst_index)`
-- Reward: small per-move cost, +1 for reaching root, penalty for invalid moves; episode ends when all routed/blocked/max steps
-- Compatible with the Pygame GUI via `python examples/pygame_gui.py --policy` (two-click select: source then destination).
+For end-to-end RL of routing decisions, you can also experiment with `RoutingPolicyEnv`
+as a separate interface for PPO-style agents (not connected to the default GUI flow).
 
 ## Testing
 
