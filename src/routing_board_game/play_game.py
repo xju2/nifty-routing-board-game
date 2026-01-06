@@ -126,7 +126,7 @@ class InteractiveRoutingGameEnv(gym.Env):
                     else:
                         print("That tile is already occupied!")
                 else:
-                    print(f"Coordinates out of bounds (0-{W-1}, 0-{H-1})")
+                    print(f"Coordinates out of bounds (0-{W - 1}, 0-{H - 1})")
             except ValueError:
                 print("Invalid input. Please enter numbers.")
 
@@ -135,7 +135,7 @@ class InteractiveRoutingGameEnv(gym.Env):
         print(f"\n[YOUR TURN] You need to place {count} piece(s).")
         last_placed = None
         for i in range(count):
-            print(f"Piece {i+1}/{count}:")
+            print(f"Piece {i + 1}/{count}:")
             x, y = self._get_user_input("Enter coordinates (x y): ")
             self.board[y, x] = 1
             last_placed = (y, x)

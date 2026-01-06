@@ -60,3 +60,5 @@ build/
 *.egg-info
 __pycache__/
 *tensorboard*
+logs/
+*.zip
