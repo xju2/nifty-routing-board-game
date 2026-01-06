@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable, List, Tuple
+from typing import Callable, List, Tuple, Optional
 
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 Position = Tuple[int, int]
 ForwardMoveFn = Callable[[Position, np.ndarray], List[Position]]
@@ -52,34 +55,20 @@ class GreedyRoutingPolicy(BaseRoutingPolicy):
     ) -> List[Tuple[Position, Position]]:
         moves: List[Tuple[Position, Position]] = []
         board_state = board.copy()
-        pieces_to_move = list(ai_pieces)
-
-        while pieces_to_move:
-            moved_this_iteration = False
-            for i, pos in enumerate(pieces_to_move):
-                forward_moves = forward_move_fn(pos, board_state)
-                if not forward_moves:
-                    continue
-
-                if len(forward_moves) == 1:
-                    dst = forward_moves[0]
-                else:
-                    dst = forward_moves[rng.integers(0, len(forward_moves))]
-
-                # apply move on board_state to keep occupancy updated
-                if pos != root_pos:
-                    board_state[pos] = 0
-                if dst != root_pos:
-                    board_state[dst] = 1
-
-                moves.append((pos, dst))
-                pieces_to_move.pop(i)
-                moved_this_iteration = True
-                break
-
-            if not moved_this_iteration:
-                break  # remaining pieces cannot move
-
+        # Move every piece once if possible
+        for pos in list(ai_pieces):
+            forward_moves = forward_move_fn(pos, board_state)
+            if not forward_moves:
+                continue
+            if len(forward_moves) == 1:
+                dst = forward_moves[0]
+            else:
+                dst = forward_moves[rng.integers(0, len(forward_moves))]
+            if pos != root_pos:
+                board_state[pos] = 0
+            if dst != root_pos:
+                board_state[dst] = 1
+            moves.append((pos, dst))
         return moves
 
 
@@ -120,6 +109,83 @@ class NeuralNetRoutingPolicy(BaseRoutingPolicy):
                     dst = forward_moves[best_idx]
                 except Exception:
                     dst = forward_moves[rng.integers(0, len(forward_moves))]
+
+                if pos != root_pos:
+                    board_state[pos] = 0
+                if dst != root_pos:
+                    board_state[dst] = 1
+
+                moves.append((pos, dst))
+                pieces_to_move.pop(i)
+                moved_this_iteration = True
+                break
+
+            if not moved_this_iteration:
+                break
+
+        return moves
+
+
+class TorchRoutingPolicy(BaseRoutingPolicy):
+    """
+    Torch-backed routing policy that also exposes log-probs for policy gradient.
+
+    Expects a torch model with signature model(board_flat, src, dst) -> score.
+    """
+
+    def __init__(self, model: nn.Module, device: Optional[torch.device] = None):
+        self.model = model
+        self.device = device or torch.device("cpu")
+        self.last_log_probs: List[torch.Tensor] = []
+
+    def _score_moves(
+        self, board_state: np.ndarray, src: Position, forward_moves: List[Position]
+    ) -> torch.Tensor:
+        board_flat = torch.tensor(
+            board_state.flatten(), dtype=torch.float32, device=self.device
+        ).unsqueeze(0)
+        src_tensor = torch.tensor(
+            [[src[0], src[1]]], dtype=torch.float32, device=self.device
+        )
+        dst_tensor = torch.tensor(
+            [[m[0], m[1]] for m in forward_moves],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        board_batch = board_flat.repeat(dst_tensor.shape[0], 1)
+        src_batch = src_tensor.repeat(dst_tensor.shape[0], 1)
+        scores = self.model(board_batch, src_batch, dst_tensor).squeeze(-1)
+        return scores
+
+    def plan_moves(
+        self,
+        ai_pieces: List[Position],
+        board: np.ndarray,
+        root_pos: Position,
+        forward_move_fn: ForwardMoveFn,
+        rng: np.random.Generator,
+    ) -> List[Tuple[Position, Position]]:
+        self.last_log_probs = []
+        moves: List[Tuple[Position, Position]] = []
+        board_state = board.copy()
+        pieces_to_move = list(ai_pieces)
+
+        while pieces_to_move:
+            moved_this_iteration = False
+            for i, pos in enumerate(pieces_to_move):
+                forward_moves = forward_move_fn(pos, board_state)
+                if not forward_moves:
+                    continue
+
+                with torch.no_grad():
+                    scores = self._score_moves(board_state, pos, forward_moves)
+                probs = F.softmax(scores, dim=0)
+                dist = torch.distributions.Categorical(probs)
+                idx = int(dist.sample().item())
+                dst = forward_moves[idx]
+                self.last_log_probs.append(
+                    dist.log_prob(torch.tensor(idx, device=probs.device))
+                )
 
                 if pos != root_pos:
                     board_state[pos] = 0

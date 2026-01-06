@@ -18,43 +18,43 @@ class RoutingBoardGameEnv(gym.Env):
     """
     Gymnasium environment for routing board game with multi-move AI routing phase.
 
-    Board:
-        - 10×10 grid with (0,0) at top-left
-        - Root square at (0, 5) - unlimited capacity
+        Board:
+            - 10×10 grid with (0,0) at top-left
+            - Root square at (0, 5) - unlimited capacity
 
-    AI Pieces:
-        - Default: 8 pieces (configurable)
-        - Move toward root reducing Manhattan distance
-        - Each piece moves once per turn
+        AI Pieces:
+            - Start empty; user may place up to 100 pieces (one per turn)
+            - Move toward root reducing Manhattan distance
+            - Each piece moves once per turn; all pieces must move
 
-    Blocking Pieces:
-        - User-controlled (placed by action)
-        - Immediately convert into AI-controlled pieces that also route to the root
+        Blocking/User Pieces:
+            - User-controlled (placed by action)
+            - Immediately convert into AI-controlled pieces that also route to the root
 
-    Turn Structure (one env.step):
-        1. User placement phase: place one blocking piece (becomes AI piece)
-        2. AI routing phase: move all AI pieces sequentially
+        Turn Structure (one env.step):
+            1. User placement phase: place one blocking piece (becomes AI piece)
+            2. AI routing phase: move all AI pieces sequentially
 
-    Rewards:
-        - -1 per routing phase
-        - +1 when a piece reaches root
-        - Optional: shaping based on distance reduction
+        Rewards:
+            - -1 per turn
+            - Losing a piece: -(5 + Manhattan distance to root)
+            - Success bonus when board is cleared (default: +50)
+            - Optional: shaping based on distance reduction
 
-    Termination:
-        - All AI pieces reach root (success)
-        - No AI piece has legal forward move (failure)
-        - Max steps reached (default: 10)
+        Termination:
+            - No AI pieces remain on board
     """
 
     metadata = {"render_modes": ["human", "ansi"]}
 
     def __init__(
         self,
-        num_ai_pieces: int = 8,
-        max_steps: int = 10,
-        reward_shaping: bool = True,
+        num_ai_pieces: int = 0,
+        max_steps: int = 150,
+        reward_shaping: bool = False,
         render_mode: Optional[str] = None,
         move_policy: Optional[BaseRoutingPolicy] = None,
+        success_bonus: float = 50.0,
     ):
         super().__init__()
 
@@ -64,12 +64,13 @@ class RoutingBoardGameEnv(gym.Env):
         self.max_steps = max_steps
         self.reward_shaping = reward_shaping
         self.render_mode = render_mode
+        self.success_bonus = success_bonus
         self.move_policy: BaseRoutingPolicy = move_policy or GreedyRoutingPolicy()
 
         # Movement directions: up, down, left, right
         self.directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
-        # Action space: place blocking piece at (row, col) that becomes an AI piece
+        # Action space: place user piece at (row, col) that becomes an AI piece
         # We use a flat index: action = row * 10 + col
         self.action_space = spaces.Discrete(self.grid_size * self.grid_size)
 
@@ -86,6 +87,9 @@ class RoutingBoardGameEnv(gym.Env):
                 "step_count": spaces.Box(
                     low=0, high=max_steps, shape=(1,), dtype=np.int32
                 ),
+                "user_pieces_remaining": spaces.Box(
+                    low=0, high=100, shape=(1,), dtype=np.int32
+                ),
             }
         )
 
@@ -96,6 +100,7 @@ class RoutingBoardGameEnv(gym.Env):
         self.pieces_routed = 0
         self.user_pieces_added = 0
         self.pieces_spawned = 0  # Tracks original AI pieces + user-added pieces
+        self.user_pieces_remaining = 100
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict] = None
@@ -109,29 +114,13 @@ class RoutingBoardGameEnv(gym.Env):
         # Mark root square
         self.board[self.root_pos] = 3
 
-        # Randomly place AI pieces (not on root)
+        # Start with no AI pieces; user must place them
         self.ai_pieces = []
         self.user_pieces_added = 0
-
-        occupied = {self.root_pos}
-        attempts = 0
-        while len(self.ai_pieces) < self.num_ai_pieces and attempts < 1000:
-            row = self.np_random.integers(0, self.grid_size)
-            col = self.np_random.integers(0, self.grid_size)
-            pos = (row, col)
-
-            if pos not in occupied:
-                self.ai_pieces.append(pos)
-                occupied.add(pos)
-                self.board[pos] = 1
-            attempts += 1
-
-        if len(self.ai_pieces) < self.num_ai_pieces:
-            raise RuntimeError(f"Failed to place all {self.num_ai_pieces} AI pieces")
-
         self.step_count = 0
         self.pieces_routed = 0
-        self.pieces_spawned = len(self.ai_pieces)
+        self.pieces_spawned = 0
+        self.user_pieces_remaining = 100
 
         return self._get_obs(), {}
 
@@ -140,6 +129,9 @@ class RoutingBoardGameEnv(gym.Env):
         return {
             "board": self.board.copy(),
             "step_count": np.array([self.step_count], dtype=np.int32),
+            "user_pieces_remaining": np.array(
+                [self.user_pieces_remaining], dtype=np.int32
+            ),
         }
 
     def _manhattan_distance(self, pos: Tuple[int, int]) -> int:
@@ -189,6 +181,8 @@ class RoutingBoardGameEnv(gym.Env):
         Returns True if placement was successful, False otherwise. A successful
         placement increases the total AI pieces that will attempt to route.
         """
+        if self.user_pieces_remaining <= 0:
+            return False
         row = action // self.grid_size
         col = action % self.grid_size
         pos = (row, col)
@@ -206,6 +200,7 @@ class RoutingBoardGameEnv(gym.Env):
         self.board[pos] = 1
         self.user_pieces_added += 1
         self.pieces_spawned += 1
+        self.user_pieces_remaining -= 1
         return True
 
     def _execute_ai_routing_phase(
@@ -223,6 +218,7 @@ class RoutingBoardGameEnv(gym.Env):
             self._manhattan_distance(pos) for pos in self.ai_pieces
         )
         pieces_reached_root = 0
+        eaten_distances: List[int] = []
         move_sequence: List[Tuple[Tuple[int, int], Tuple[int, int]]] = []
 
         # Ask policy to propose a routing plan for this turn
@@ -234,49 +230,71 @@ class RoutingBoardGameEnv(gym.Env):
             rng=self.np_random,
         )
 
-        # Apply proposed moves sequentially with safety checks
+        # Apply proposed moves sequentially with safety checks and collision rules
         current_positions = list(self.ai_pieces)
+        destination_map: dict[Tuple[int, int], List[Tuple[int, int]]] = {}
         for src_pos, new_pos in proposed_moves:
             if src_pos not in current_positions:
                 continue  # source no longer has a piece
 
             forward_moves = self._get_forward_moves(src_pos)
             if new_pos not in forward_moves:
-                continue  # invalid per current board state
+                # invalid move -> piece lost
+                eaten_distances.append(self._manhattan_distance(src_pos))
+                if src_pos != self.root_pos:
+                    self.board[src_pos] = 0
+                current_positions.remove(src_pos)
+                continue
 
             # Clear old position
             if src_pos != self.root_pos:
                 self.board[src_pos] = 0
             current_positions.remove(src_pos)
 
-            # Apply move
-            if new_pos == self.root_pos:
-                pieces_reached_root += 1
-                # routed piece removed from board
-            else:
-                current_positions.append(new_pos)
-                self.board[new_pos] = 1
-
+            destination_map.setdefault(new_pos, []).append(src_pos)
             move_sequence.append((src_pos, new_pos))
 
-        # Update AI pieces list (excluding routed pieces)
-        self.ai_pieces = current_positions
+        # Any piece not moved is eaten (must move rule)
+        for leftover in current_positions:
+            eaten_distances.append(self._manhattan_distance(leftover))
+            if leftover != self.root_pos:
+                self.board[leftover] = 0
+
+        # Resolve destinations
+        next_positions = []
+        for dest, src_list in destination_map.items():
+            if dest == self.root_pos:
+                # Only one survives on root; extras are eaten
+                pieces_reached_root += 1
+                if len(src_list) > 1:
+                    for src in src_list[1:]:
+                        eaten_distances.append(self._manhattan_distance(src))
+            else:
+                # Only one survives per square; extras eaten
+                next_positions.append(dest)
+                if len(src_list) > 1:
+                    for src in src_list[1:]:
+                        eaten_distances.append(self._manhattan_distance(src))
+                self.board[dest] = 1
+
+        self.ai_pieces = next_positions
 
         # Calculate reward
-        reward = -1.0  # Base cost per routing phase
-        reward += pieces_reached_root  # +1 per piece reaching root
+        reward = -1.0  # Base cost per routing phase (turn)
+        if eaten_distances:
+            reward -= sum(5 + d for d in eaten_distances)
+
+        # No additional reward for reaching root under new spec
 
         # Optional reward shaping based on distance reduction
         if self.reward_shaping and self.ai_pieces:
             total_distance_after = sum(
                 self._manhattan_distance(pos) for pos in self.ai_pieces
             )
-            distance_reduction = (
-                total_distance_before - total_distance_after - pieces_reached_root
-            )
+            distance_reduction = total_distance_before - total_distance_after
             reward += 0.1 * distance_reduction  # Small bonus for progress
 
-        return reward, pieces_reached_root, move_sequence
+        return reward, pieces_reached_root, move_sequence, len(eaten_distances)
 
     def step(self, action: int) -> Tuple[dict, float, bool, bool, dict]:
         """
@@ -292,7 +310,9 @@ class RoutingBoardGameEnv(gym.Env):
         placement_success = self._place_blocking_piece(action)
 
         # Phase 2: AI routing phase (move all pieces)
-        reward, pieces_reached_root, move_sequence = self._execute_ai_routing_phase()
+        reward, pieces_reached_root, move_sequence, eaten_pieces = (
+            self._execute_ai_routing_phase()
+        )
 
         self.step_count += 1
         self.pieces_routed += pieces_reached_root
@@ -301,18 +321,10 @@ class RoutingBoardGameEnv(gym.Env):
         terminated = False
         truncated = False
 
-        # Success: all AI pieces reached root
+        # Termination: no pieces remain
         if len(self.ai_pieces) == 0:
+            reward += self.success_bonus
             terminated = True
-
-        # Failure: no AI piece has a legal forward move
-        elif all(self._is_piece_blocked(pos) for pos in self.ai_pieces):
-            terminated = True
-            reward -= 10.0  # Penalty for failure
-
-        # Max steps reached
-        if self.step_count >= self.max_steps:
-            truncated = True
 
         info = {
             "placement_success": placement_success,
@@ -323,6 +335,8 @@ class RoutingBoardGameEnv(gym.Env):
             "user_pieces_added": self.user_pieces_added,
             "step_count": self.step_count,
             "move_sequence": move_sequence,
+            "eaten_pieces": eaten_pieces,
+            "user_pieces_remaining": self.user_pieces_remaining,
         }
 
         return self._get_obs(), reward, terminated, truncated, info

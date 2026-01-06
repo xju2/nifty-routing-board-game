@@ -21,10 +21,7 @@ def main():
     # Create environment
     print("Creating environment...")
     env = RoutingBoardGameEnv(
-        num_ai_pieces=5,  # Use fewer pieces for easier visualization
-        max_steps=10,
-        reward_shaping=True,
-        render_mode="human",
+        num_ai_pieces=0, max_steps=150, reward_shaping=False, render_mode="human"
     )
     print("✓ Environment created\n")
 
@@ -60,8 +57,9 @@ def main():
 
         # Show results
         print(f"  Placement success: {info['placement_success']}")
-        print(f"  Pieces reached root this turn: {info['pieces_reached_root']}")
         print(f"  Pieces remaining: {info['pieces_remaining']}")
+        print(f"  Eaten pieces: {info['eaten_pieces']}")
+        print(f"  User pieces remaining: {info['user_pieces_remaining']}")
         print(f"  Reward this step: {reward:.2f}")
         print()
 
@@ -72,10 +70,7 @@ def main():
         if terminated:
             print("\n" + "=" * 70)
             print("EPISODE TERMINATED")
-            if info["pieces_remaining"] == 0:
-                print("Result: SUCCESS - All AI pieces reached the root!")
-            else:
-                print("Result: FAILURE - AI pieces are blocked!")
+            print("Result: SUCCESS - No pieces remain on the board!")
             print("=" * 70)
             break
 
@@ -116,6 +111,7 @@ def main():
     print("  Actions represent grid positions:")
     print("    Action n -> position (n // 10, n % 10)")
     print("  Example: Action 45 -> position (4, 5)")
+    print("  Pieces available to place: 100 (one per turn)")
     print()
 
     print("=" * 70)
