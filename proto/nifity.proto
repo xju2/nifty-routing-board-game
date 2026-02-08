@@ -1,0 +1,225 @@
+syntax = "proto3";
+
+package nifty.v1;
+
+// =====================
+// Versioning & metadata
+// =====================
+
+message VersionInfo {
+  // Canonical schema version (this proto). Bump when breaking wire compatibility.
+  uint32 schema_version = 1;
+
+  // Game rule version. Bump when changing semantics (e.g., new piece rules).
+  string game_version = 2;
+
+  // Optional feature flags that affect semantics or interpretation.
+  repeated string flags = 3;
+}
+
+message EpisodeInfo {
+  // Unique identifier for episode / rollout for logging/repro.
+  string episode_id = 1;
+
+  // Step counter in the episode.
+  uint64 t = 2;
+
+  // Seed used to construct the initial state (if applicable).
+  uint64 init_seed = 3;
+}
+
+message Determinism {
+  // If the step function uses randomness, this is the seed the caller provides.
+  // Engine must use this seed (or derive from it deterministically).
+  uint64 step_seed_in = 1;
+
+  // Engine reports the actual seed used (same as in unless engine overrides in a documented way).
+  uint64 step_seed_used = 2;
+
+  // Engine can optionally provide a hash of internal RNG state for debugging.
+  uint64 rng_state_hash = 3;
+}
+
+// =====================
+// Graph representation
+// =====================
+
+// Lightly-typed features to keep schema stable while allowing evolution.
+// This is friendly to ML: you can treat features as named arrays.
+message FeatureTensor {
+  // Name e.g. "fifo_occupancy", "node_type_onehot", "edge_utilization"
+  string name = 1;
+
+  // Shape is row-major. Example:
+//   per-node scalar: [num_nodes]
+//   per-edge scalar: [num_edges]
+//   per-node vector: [num_nodes, k]
+  repeated uint32 shape = 2;
+
+  // Exactly one payload should be set.
+  oneof data {
+    FloatData f32 = 3;
+    IntData   i32 = 4;
+    BoolData  b1  = 5;
+  }
+
+  message FloatData { repeated float values = 1; }
+  message IntData   { repeated int32 values = 1; }
+  message BoolData  { repeated bool values = 1; }
+}
+
+enum NodeKind {
+  NODE_KIND_UNSPECIFIED = 0;
+  NODE_KIND_ROUTER      = 1;
+  NODE_KIND_SOURCE      = 2;
+  NODE_KIND_SINK        = 3;
+  NODE_KIND_OBSTACLE    = 4; // optional for board-game variants
+}
+
+message Node {
+  uint32 id = 1;
+  NodeKind kind = 2;
+
+  // Optional geometry / board coordinates (can be omitted for abstract graphs).
+  int32 x = 3;
+  int32 y = 4;
+
+  // Optional static tags for convenience (stringly typed; don’t overuse).
+  repeated string tags = 5;
+}
+
+message Edge {
+  uint32 id = 1;
+  uint32 src = 2;
+  uint32 dst = 3;
+
+  // Optional static params.
+  float capacity = 4;   // e.g., flits/cycle
+  float latency  = 5;   // e.g., cycles
+  bool directed  = 6;   // usually true; false => treat as undirected
+}
+
+message StateGraph {
+  VersionInfo version = 1;
+  EpisodeInfo episode = 2;
+
+  // Canonical nodes and edges. IMPORTANT:
+  // - Node IDs must be unique.
+  // - Edge IDs must be unique.
+  // - Node ordering should be canonical (sorted by id) if you want stable byte-equality.
+  repeated Node nodes = 3;
+  repeated Edge edges = 4;
+
+  // Dynamic features. Convention:
+  // - per-node tensors have shape [num_nodes, ...]
+  // - per-edge tensors have shape [num_edges, ...]
+  // - global tensors have shape [...]
+  repeated FeatureTensor node_features = 5;
+  repeated FeatureTensor edge_features = 6;
+  repeated FeatureTensor global_features = 7;
+
+  // Termination flags.
+  bool is_terminal = 8;
+  string terminal_reason = 9;
+
+  // Optional: engine can attach a stable hash of canonicalized state for debugging.
+  uint64 canonical_hash = 10;
+}
+
+// =====================
+// Action / Move schemas
+// =====================
+
+enum ActionType {
+  ACTION_UNSPECIFIED = 0;
+
+  // Generic routing-style actions.
+  ACTION_SET_NEXT_HOP = 1;  // choose neighbor for a piece/packet
+  ACTION_HOLD         = 2;  // do nothing for that piece/packet
+  ACTION_DROP         = 3;  // optional (if rules allow)
+
+  // Board-game style actions (optional to use).
+  ACTION_PLACE        = 10;
+  ACTION_MOVE         = 11;
+  ACTION_ROTATE       = 12;
+}
+
+message Move {
+  // The entity being controlled: piece id / packet id / token id.
+  uint32 entity_id = 1;
+
+  ActionType type = 2;
+
+  // For graph routing: pick an edge or dst node or port.
+  // Convention: prefer specifying dst_node_id; edge_id is optional.
+  uint32 dst_node_id = 3;
+  uint32 edge_id = 4;
+
+  // Optional integer parameters (e.g., rotation steps, discrete port index).
+  repeated int32 i_params = 5;
+
+  // Optional float parameters (e.g., confidence, temperature, tie-break).
+  repeated float f_params = 6;
+}
+
+message MoveBatch {
+  // List of moves applied in this step.
+  repeated Move moves = 1;
+
+  // Optional: if a policy uses masked logits, you can store them here for debugging.
+  // But keep it out of the core path unless you really need it.
+  repeated FeatureTensor aux = 2;
+}
+
+// =====================
+// Core engine API results
+// =====================
+
+message StepRequest {
+  StateGraph state = 1;
+  MoveBatch action = 2;
+  Determinism det = 3;
+
+  // If true, engine may validate legality and return violations.
+  bool validate = 4;
+}
+
+message LegalityViolation {
+  uint32 entity_id = 1;
+  string code = 2;     // e.g. "ILLEGAL_DST", "CAPACITY_EXCEEDED"
+  string detail = 3;   // free text
+}
+
+message StepResult {
+  StateGraph next_state = 1;
+
+  // Reward-like score delta (optional). Many RL frameworks want this.
+  // If you don't use it, keep as 0 and use score() separately.
+  int32 reward = 2;
+
+  Determinism det = 3;
+
+  // If validate was requested, engine can populate violations.
+  repeated LegalityViolation violations = 4;
+}
+
+message RouteRequest {
+  StateGraph state = 1;
+  Determinism det = 2;
+}
+
+message RouteResult {
+  MoveBatch action = 1;
+  Determinism det = 2;
+}
+
+message ScoreRequest {
+  StateGraph state = 1;
+}
+
+message ScoreResult {
+  int32 score = 1;
+
+  // Optional breakdown to help debugging/training signals.
+  repeated FeatureTensor components = 2;
+}
