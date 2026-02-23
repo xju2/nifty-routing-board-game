@@ -62,3 +62,10 @@ __pycache__/
 *tensorboard*
 logs/
 *.zip
+
+
+*.pb*
+*_pb2.py
+*.bin
+*.exe
+

@@ -67,17 +67,17 @@ OBJS := $(patsubst %.cxx,%.o,$(SRCS_CXX))
 OBJS := $(patsubst %,$(BUILD_DIR)/%,$(OBJS))
 OBJS += $(BUILD_DIR)/nifty_common.pb.o
 
-TARGETS := create read
+TARGETS := create.exe read.exe
 
 .PHONY: all proto clean distclean help
 
 all: $(TARGETS)
 
 # Link targets
-create: $(BUILD_DIR)/create.o $(BUILD_DIR)/nifty_common.pb.o
+create.exe: $(BUILD_DIR)/create.o $(BUILD_DIR)/nifty_common.pb.o
 	$(CXX) $^ $(LDFLAGS) -o $@
 
-read: $(BUILD_DIR)/read.o $(BUILD_DIR)/nifty_common.pb.o
+read.exe: $(BUILD_DIR)/read.o $(BUILD_DIR)/nifty_common.pb.o
 	$(CXX) $^ $(LDFLAGS) -o $@
 
 # Compile rules (put .o files into BUILD_DIR)
@@ -112,8 +112,8 @@ distclean: clean
 help:
 	@printf "Makefile targets:\n"
 	@printf "  make         Build all targets (create, read)\n"
-	@printf "  make create\n"
-	@printf "  make read\n"
+	@printf "  make create.exe\n"
+	@printf "  make read.exe\n"
 	@printf "  make proto    Generate $(PB_CC) and $(PB_H) from $(PROTO)\n"
 	@printf "  make clean    Remove object files and binaries\n"
 	@printf "  make distclean  clean + remove generated proto files\n\n"
