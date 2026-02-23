@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package nifty_common.v1;
+
+message NDArray {
+  enum DataType {
+    FLOAT32 = 0;
+    FLOAT64 = 1;
+    INT64 = 2;
+    INT32 = 3;
+    UINT8 = 4;
+  }
+
+  DataType dtype = 1;
+  repeated int64 shape = 2;
+  bytes raw_data = 3; // Binary buffer for high-speed I/O
+}
+
+message GraphBatch {
+  string version = 1;       // Schema versioning for backward compatibility
+  string creator_id = 2;   // e.g., "Simulation_Group_A"
+
+  // Core Graph Components
+  NDArray nodes = 3;         // Shape: [N, D_node]
+  NDArray edge_index = 4;    // Shape: [2, E] (Source, Target)
+  NDArray edge_attributes = 5; // Shape: [E, D_edge]
+  NDArray global_context = 6;  // Shape: [D_global]
+
+  // Extensibility
+  map<string, NDArray> auxiliary_data = 7; // For custom team-specific outputs
+  map<string, string> metadata = 8;        // Timestamps, simulation parameters, etc.
+}
