@@ -34,6 +34,25 @@ def get_torch_version():
     version = torch.__version__
     return version.split('+')[0]
 
+def install_torch(version=None, only_torch=True):
+    """
+    Installs PyTorch with the appropriate CUDA version if not already installed.
+    """
+    print("\n[INFO] Installing PyTorch...")
+    vision_and_audio = ["torchvision", "torchaudio"] if not only_torch else []
+
+    if version:
+        print(f"Requested PyTorch version: {version}")
+        install_cmd = [sys.executable, "-m", "pip", "install", f"torch=={version}", *vision_and_audio]
+    else:
+        install_cmd = [sys.executable, "-m", "pip", "install", "torch", *vision_and_audio]
+
+    print(f"Running: {' '.join(install_cmd)}")
+    result = subprocess.run(install_cmd)
+    if result.returncode != 0:
+        print("[ERROR] Failed to install PyTorch.")
+        sys.exit(1)
+
 def check_nvcc():
     """Checks if nvcc is available for source compilation."""
     if shutil.which("nvcc") is None:
@@ -97,7 +116,7 @@ def get_install_cmd_prefix():
     else:
         return [sys.executable, "-m", "pip", "install"]
 
-def install_pyg_dependencies(force_source=False, num_cores=None):
+def install_pyg_dependencies(force_source=False, num_cores=None, torch_version=None):
     print("--- Diagnosing Environment ---")
     print(f"Python: {sys.version.split()[0]}")
 
@@ -108,8 +127,13 @@ def install_pyg_dependencies(force_source=False, num_cores=None):
         print(f"CUDA Tag: {cuda_tag}")
     except Exception as e:
         print(f"Error checking PyTorch version: {e}")
-        print("Please ensure PyTorch is installed first.")
-        return
+        install_torch(torch_version)
+
+        # Re-check after installation
+        torch_ver = get_torch_version()
+        cuda_tag = get_cuda_tag()
+        print(f"PyTorch Version: {torch_ver}")
+        print(f"CUDA Tag: {cuda_tag}")
 
     # Calculate wheel URL (needed for both source and binary modes for pyg_lib)
     whl_url = f"https://data.pyg.org/whl/torch-{torch_ver}+{cuda_tag}.html"
@@ -197,6 +221,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Install PyG dependencies.")
     parser.add_argument("--source", action="store_true", help="Force install from source (fixes GLIBC errors)")
     parser.add_argument("--num-cores", type=int, help="Number of CPU cores to use for compilation", default=None)
+    parser.add_argument("--torch-version", type=str, help="Specific PyTorch version to install (e.g., 2.3.0)", default=None)
     args = parser.parse_args()
 
-    install_pyg_dependencies(force_source=args.source, num_cores=args.num_cores)
+    install_pyg_dependencies(force_source=args.source, num_cores=args.num_cores, torch_version=args.torch_version)

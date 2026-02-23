@@ -22,5 +22,5 @@ clean:
 
 .PHONY: install
 install:
-	./scripts/install_pyg.py --source --num-cores 32 --torch-version 2.8.0
 	uv sync
+	./scripts/install_pyg.py --source --num-cores 32 --torch-version 2.8.0
