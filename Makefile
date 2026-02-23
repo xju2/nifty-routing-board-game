@@ -19,3 +19,8 @@ $(WASM): main.c Makefile
 .PHONY: clean
 clean:
 	rm -f $(WASM)
+
+.PHONY: install
+install:
+	./scripts/install_pyg.py --source --num-cores 32 --torch-version 2.8.0
+	uv sync
