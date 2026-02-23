@@ -25,7 +25,15 @@ message GraphConstants {
   }
 
   enum EdgeColumn {
-    EDGE_CONGESTION = 0; // Congestion level (0.0 - 1.0)
+    EDGE_CAPACITY = 0;   // Maximum number of packets that can traverse this edge per time step
+    EDGE_CONGESTION = 1; // Congestion level (0.0 - 1.0)
+    // Future features must be appended here
+  }
+
+  enum GlobalColumn {
+    MAX_NEW_PIECES_ALLOWED_PER_CELL = 0;    // Current simulation time in seconds
+    CELL_OVERFLOW_ALLOWED = 1;              // Threshold for cell overflow
+    ZERO_MOVE_ALLOWED = 2;                  // Flag for zero-move allowance for all pieces.
     // Future features must be appended here
   }
 }
