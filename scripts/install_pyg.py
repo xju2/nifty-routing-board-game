@@ -217,6 +217,12 @@ def install_pyg_dependencies(force_source=False, num_cores=None, torch_version=N
         else:
             print("Tip: Ensure 'nvcc' matches your PyTorch CUDA version and gcc is up to date.")
 
+    # now install pyg
+    print("\n--- Installing PyG ---")
+    install_pyg_cmd = install_prefix + ["torch_geometric"]
+    print(f"Running: {' '.join(install_pyg_cmd)}")
+    subprocess.run(install_pyg_cmd)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Install PyG dependencies.")
     parser.add_argument("--source", action="store_true", help="Force install from source (fixes GLIBC errors)")
